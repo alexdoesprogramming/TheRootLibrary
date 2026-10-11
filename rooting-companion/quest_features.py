@@ -1038,7 +1038,7 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
             "[bold cyan]THE ROOT LIBRARY  •  QUEST TOOLKIT[/bold cyan]\n"
             "Device diagnostics, root/Frida helpers, app research, and per-game notes.\n"
             "[dim]Read-only checks by default • no automatic exploit, flashing, or boot/system writes[/dim]",
-            title="QUEST TOOLKIT  /  v0.7",
+            title="QUEST TOOLKIT  /  v0.8",
             subtitle="Select a tool • B returns",
             border_style="cyan",
             padding=(1, 2),
