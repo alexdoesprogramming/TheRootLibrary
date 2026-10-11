@@ -557,7 +557,7 @@ def install_quest_apps() -> None:
     """Download one of the listed official APKs and install it to an authorized ADB device."""
     clear_screen()
     header()
-    table = Table(title="Quest app installer", box=box.ROUNDED, header_style="bold cyan")
+    table = Table(title="APK Installer", box=box.ROUNDED, header_style="bold cyan")
     table.add_column("#", style="bold cyan", width=4)
     table.add_column("App")
     table.add_column("Version")
@@ -891,7 +891,7 @@ def main_menu() -> None:
         menu.add_row("4", "Install Frida server into Platform Tools")
         menu.add_row("5", "Push & try to start Frida server on device")
         menu.add_row("6", "Download latest Singularity APK & install via ADB")
-        menu.add_row("7", "Install Lightning Launcher / CX File Explorer / CitraVR")
+        menu.add_row("7", "APK Installer")
         menu.add_row("8", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
