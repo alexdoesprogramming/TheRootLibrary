@@ -703,6 +703,9 @@ def install_quest_apps() -> None:
             if app["name"] == "CX File Explorer":
                 if not final_url.startswith(app["allowed_prefix"]):
                     raise RuntimeError(f"CX File Explorer redirected to an unexpected location: {final_url}")
+            elif app["name"] == "VLC for Android (ARM64)":
+                if final_host not in {"get.videolan.org", "download.videolan.org"}:
+                    raise RuntimeError(f"VLC redirected to an unexpected location: {final_url}")
             elif (
                 final_host not in {"github.com", "release-assets.githubusercontent.com"}
                 and not final_host.endswith(".githubusercontent.com")
