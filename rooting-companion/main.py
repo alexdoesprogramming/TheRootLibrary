@@ -10,6 +10,7 @@ import tempfile
 import urllib.request
 import urllib.parse
 import urllib.error
+import re
 import zipfile
 from pathlib import Path
 
@@ -637,7 +638,52 @@ def install_quest_apps() -> None:
         serial = devices[int(device_choice) - 1]
 
     apk_path = INSTALL_DIR / app["filename"]
-    console.print(f"[cyan]App:[/cyan] {app['name']} ({app['version']})")
+    download_url = app.get("url", "")
+    expected_prefix = app["allowed_prefix"]
+    app_version = app["version"]
+    try:
+        if app.get("api_url"):
+            api_request = urllib.request.Request(
+                app["api_url"],
+                headers={"User-Agent": "TheRootLibrary/0.6", "Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(api_request, timeout=30) as response:
+                release = json.load(response)
+            assets = [
+                item for item in release.get("assets", [])
+                if str(item.get("name", "")).lower().endswith(".apk")
+                and item.get("browser_download_url")
+            ]
+            asset_contains = app.get("asset_contains", "").lower()
+            if asset_contains:
+                assets = [item for item in assets if asset_contains in str(item.get("name", "")).lower()]
+            asset = next(
+                (item for item in assets if item["browser_download_url"].startswith(expected_prefix)),
+                None,
+            )
+            if not asset:
+                raise RuntimeError(f"No matching official APK asset was found for {app['name']}.")
+            download_url = asset["browser_download_url"]
+            app_version = str(release.get("tag_name", app_version))
+        elif app.get("index_url"):
+            index_request = urllib.request.Request(
+                app["index_url"], headers={"User-Agent": "TheRootLibrary/0.6"}
+            )
+            with urllib.request.urlopen(index_request, timeout=30) as response:
+                listing = response.read().decode("utf-8", errors="replace")
+            matches = re.findall(r'href="(VLC-Android-(\d+(?:\.\d+)+)-arm64-v8a\.apk)"', listing)
+            if not matches:
+                raise RuntimeError("No ARM64 VLC APK was found in the official VideoLAN listing.")
+            filename, app_version = max(
+                matches, key=lambda item: tuple(int(part) for part in item[1].split("."))
+            )
+            download_url = urllib.parse.urljoin(app["index_url"], filename)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
+        console.print(f"[red]Could not resolve official download for {app['name']}:[/red] {exc}")
+        pause()
+        return
+
+    console.print(f"[cyan]App:[/cyan] {app['name']} ({app_version})")
     console.print(f"[cyan]Target device:[/cyan] {serial}")
     console.print("[dim]This downloads the APK from the app's linked official release/download page.[/dim]")
     if console.input("Download and install this APK? Type INSTALL to confirm › ").strip() != "INSTALL":
@@ -648,13 +694,13 @@ def install_quest_apps() -> None:
     try:
         INSTALL_DIR.mkdir(parents=True, exist_ok=True)
         request = urllib.request.Request(
-            app["url"], headers={"User-Agent": "TheRootLibrary/0.5"}
+            download_url, headers={"User-Agent": "TheRootLibrary/0.6"}
         )
         console.print("[cyan]Downloading APK…[/cyan]")
         with urllib.request.urlopen(request, timeout=90) as response:
             final_url = response.geturl()
             final_host = urllib.parse.urlparse(final_url).hostname or ""
-            if choice == "2":
+            if app["name"] == "CX File Explorer":
                 if not final_url.startswith(app["allowed_prefix"]):
                     raise RuntimeError(f"CX File Explorer redirected to an unexpected location: {final_url}")
             elif (
