@@ -276,6 +276,123 @@ def install_frida_server() -> None:
     pause()
 
 
+def install_singularity_apk() -> None:
+    """Download the latest official Singularity APK and sideload it to a selected ADB device."""
+    clear_screen()
+    header()
+    adb = find_adb()
+    if not adb:
+        console.print("[yellow]ADB is not installed. Install Platform Tools first.[/yellow]")
+        pause()
+        return
+
+    try:
+        devices_result = run_adb(adb, "devices")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Could not query ADB devices:[/red] {exc}")
+        pause()
+        return
+
+    devices = []
+    for line in devices_result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            devices.append(parts[0])
+
+    if not devices:
+        console.print("[yellow]No authorized ADB device detected.[/yellow]")
+        console.print("[dim]Connect the Quest, accept the USB debugging prompt, and retry.[/dim]")
+        pause()
+        return
+
+    if len(devices) == 1:
+        serial = devices[0]
+    else:
+        console.print("[bold]Choose the target device:[/bold]")
+        for index, device_serial in enumerate(devices, start=1):
+            console.print(f"  [cyan]{index}.[/cyan] {device_serial}")
+        choice = console.input("Device number (or B to cancel) › ").strip().lower()
+        if choice in {"b", "back", "q"}:
+            return
+        if not choice.isdigit() or not 1 <= int(choice) <= len(devices):
+            console.print("[yellow]Invalid selection.[/yellow]")
+            pause()
+            return
+        serial = devices[int(choice) - 1]
+
+    api_url = "https://api.github.com/repos/Lumince/singularity/releases/latest"
+    headers = {
+        "User-Agent": "TheRootLibrary/0.4",
+        "Accept": "application/vnd.github+json",
+    }
+    apk_path = INSTALL_DIR / "Singularity-latest.apk"
+    try:
+        console.print("[cyan]Checking the latest Singularity release…[/cyan]")
+        request = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            release = json.load(response)
+
+        tag = str(release.get("tag_name", "")).strip()
+        assets = release.get("assets", [])
+        asset = next(
+            (
+                item for item in assets
+                if str(item.get("name", "")).lower().endswith(".apk")
+                and item.get("browser_download_url")
+            ),
+            None,
+        )
+        if not tag or not asset:
+            raise RuntimeError("The latest GitHub release did not contain an APK asset.")
+
+        asset_url = asset["browser_download_url"]
+        if not asset_url.startswith("https://github.com/Lumince/singularity/releases/"):
+            raise RuntimeError("The release APK URL was missing or unexpected.")
+
+        console.print(f"[cyan]Latest release:[/cyan] {tag}")
+        console.print(f"[cyan]APK asset:[/cyan] {asset['name']}")
+        console.print(f"[cyan]Target device:[/cyan] {serial}")
+        console.print(
+            "[yellow]This installs/updates the Singularity app only. It does not press Root Now "
+            "or run the rooting process.[/yellow]"
+        )
+        confirm = console.input("Download and install this APK? Type INSTALL to confirm › ").strip()
+        if confirm != "INSTALL":
+            console.print("[dim]Cancelled. No APK was installed.[/dim]")
+            pause()
+            return
+
+        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(asset_url, headers={"User-Agent": "TheRootLibrary/0.4"})
+        console.print("[cyan]Downloading the official release APK…[/cyan]")
+        with urllib.request.urlopen(request, timeout=90) as response, apk_path.open("wb") as output:
+            shutil.copyfileobj(response, output)
+
+        if not apk_path.is_file() or apk_path.stat().st_size == 0:
+            raise RuntimeError("The downloaded APK is empty.")
+        with apk_path.open("rb") as apk_file:
+            if apk_file.read(4) != b"PK\\x03\\x04":
+                raise RuntimeError("The downloaded asset does not look like a valid APK/ZIP file.")
+
+        console.print("[cyan]Installing with ADB (granting requested runtime permissions)…[/cyan]")
+        install_result = run_adb(
+            adb, "-s", serial, "install", "-r", "-g", str(apk_path), timeout=180
+        )
+        if install_result.stdout.strip():
+            console.print(install_result.stdout.strip())
+        if install_result.stderr.strip():
+            console.print(install_result.stderr.strip())
+        if install_result.returncode != 0 or "Success" not in install_result.stdout:
+            raise RuntimeError("ADB installation failed. Check the output above and the headset screen.")
+
+        console.print(f"[green]✓ Singularity {tag} installed on {serial}.[/green]")
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Singularity installation failed:[/red] {exc}")
+    finally:
+        apk_path.unlink(missing_ok=True)
+    pause()
+
+
 def show_adb_status() -> None:
     clear_screen()
     header()
@@ -497,7 +614,8 @@ def main_menu() -> None:
         menu.add_row("2", "Check ADB and connected devices")
         menu.add_row("3", "Browse, extract & run a mod ZIP")
         menu.add_row("4", "Install Frida server into Platform Tools")
-        menu.add_row("5", "About & safety")
+        menu.add_row("5", "Download latest Singularity APK & install via ADB")
+        menu.add_row("6", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -518,6 +636,8 @@ def main_menu() -> None:
         elif choice == "4":
             install_frida_server()
         elif choice == "5":
+            install_singularity_apk()
+        elif choice == "6":
             clear_screen()
             header()
             console.print(
