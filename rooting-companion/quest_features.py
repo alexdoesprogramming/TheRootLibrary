@@ -517,6 +517,300 @@ def export_app_inventory(adb: Path, console, pause: Callable[[], None]) -> None:
         console.print(f"[red]Inventory export failed:[/red] {exc}")
     pause()
 
+
+
+DEVICE_PROFILES = APP_DATA / "device_profiles.json"
+MOD_WORKSPACE = APP_DATA / "mod_workspace"
+
+
+def _load_json_file(path: Path, fallback):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
+def device_profiles(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Save and review named local profiles for known Quest devices."""
+    console.clear()
+    console.print(Panel("Save a local snapshot of a headset's identity/build so you can compare devices later.", title="Device Profiles", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        props = _properties(adb, serial)
+        profiles = _load_json_file(DEVICE_PROFILES, {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+        old = profiles.get(serial, {})
+        table = Table(title=f"Profile — {serial}", box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Property")
+        table.add_column("Value", overflow="fold")
+        for key, value in props.items():
+            table.add_row(key, value)
+        table.add_row("First saved", str(old.get("first_saved", datetime.now().isoformat(timespec="seconds"))))
+        table.add_row("Last updated", datetime.now().isoformat(timespec="seconds"))
+        console.print(table)
+        action = console.input("S = save/update profile, V = view saved profiles, B = back › ").strip().lower()
+        if action == "s":
+            notes = console.input("Profile notes (optional; blank keeps existing notes) › ").strip()
+            profiles[serial] = {
+                "serial": serial,
+                "properties": props,
+                "notes": notes or old.get("notes", ""),
+                "first_saved": old.get("first_saved", datetime.now().isoformat(timespec="seconds")),
+                "last_updated": datetime.now().isoformat(timespec="seconds"),
+            }
+            APP_DATA.mkdir(parents=True, exist_ok=True)
+            DEVICE_PROFILES.write_text(json.dumps(profiles, indent=2, ensure_ascii=False), encoding="utf-8")
+            console.print(f"[green]Profile saved locally:[/green] {DEVICE_PROFILES}")
+        elif action == "v":
+            if not profiles:
+                console.print("[yellow]No saved profiles yet.[/yellow]")
+            else:
+                saved = Table(title="Saved device profiles", box=box.ROUNDED)
+                saved.add_column("Serial")
+                saved.add_column("Model")
+                saved.add_column("Build")
+                saved.add_column("Last updated")
+                for key, item in profiles.items():
+                    values = item.get("properties", {})
+                    saved.add_row(key, values.get("Model", "Unknown"), values.get("Build display ID", "Unknown"), item.get("last_updated", "Unknown"))
+                console.print(saved)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Device profile operation failed:[/red] {exc}")
+    pause()
+
+
+def live_logcat_viewer(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Repeatedly query recent logcat lines with optional text filtering."""
+    console.clear()
+    console.print(Panel("Refreshable logcat snapshots with optional Unity, IL2CPP, Frida, crash, or custom filters.", title="Live Logcat Viewer", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    query = console.input("Filter text / regex (blank = common modding errors; B = back) › ").strip()
+    if query.lower() in {"b", "back", "q"}:
+        return
+    pattern_text = query or r"unity|il2cpp|fatal|exception|crash|frida|singularity|error"
+    try:
+        pattern = re.compile(pattern_text, re.I)
+    except re.error as exc:
+        console.print(f"[yellow]Invalid regex: {exc}. Using literal text instead.[/yellow]")
+        pattern = re.compile(re.escape(pattern_text), re.I)
+    while True:
+        try:
+            result = _run(adb, serial, "logcat", "-d", "-t", "1200", "-v", "time", timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "logcat returned a non-zero exit code")
+            matches = [line for line in result.stdout.splitlines() if pattern.search(line)]
+            console.clear()
+            console.print(Panel(f"Device: {serial}\nFilter: {pattern_text}\nMatched {len(matches)} of the latest 1200 lines", title="Live Logcat Viewer", border_style="cyan"))
+            for line in matches[-100:]:
+                console.print(line, markup=False, soft_wrap=True)
+            console.print("\n[dim]R = refresh   S = save matching lines   B = back[/dim]")
+            action = console.input("Action › ").strip().lower()
+            if action in {"b", "back", "q"}:
+                return
+            if action == "s":
+                path = _report_path("quest-live-logcat")
+                path.write_text("\n".join(matches) + "\n", encoding="utf-8")
+                console.print(f"[green]Saved:[/green] {path}")
+                pause()
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+            console.print(f"[red]Logcat query failed:[/red] {exc}")
+            pause()
+            return
+
+
+def apk_inspector_plus(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Show package version, install source, APK paths, and available signature metadata."""
+    console.clear()
+    console.print(Panel("Expanded package metadata from Android's Package Manager; no APK patching or protected-data access.", title="APK Inspector Plus", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        result = _run(adb, serial, "shell", "pm", "list", "packages", timeout=30)
+        packages = sorted(line.strip().removeprefix("package:") for line in result.stdout.splitlines() if line.startswith("package:"))
+        query = console.input("Filter package IDs › ").strip().lower()
+        matches = [p for p in packages if query in p.lower()]
+        for index, package in enumerate(matches[:150], 1):
+            console.print(f"[cyan]{index:>3}.[/cyan] {package}")
+        selected = console.input("Exact package ID (blank = back) › ").strip()
+        if not selected:
+            return
+        if selected not in packages:
+            console.print("[yellow]Package ID was not found on this device.[/yellow]")
+            pause()
+            return
+        details = _run(adb, serial, "shell", "dumpsys", "package", selected, timeout=30)
+        paths = _run(adb, serial, "shell", "pm", "path", selected, timeout=15)
+        wanted = re.compile(r"versionCode=|versionName=|firstInstallTime=|lastUpdateTime=|installerPackageName=|initiatingPackageName=|signatures=|SigningInfo|pkgFlags=|userId=", re.I)
+        lines = [line.strip() for line in details.stdout.splitlines() if wanted.search(line)]
+        table = Table(title=f"APK metadata — {selected}", box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Field")
+        table.add_column("Value", overflow="fold")
+        table.add_row("Device", serial)
+        table.add_row("APK path(s)", paths.stdout.strip() or "Not reported")
+        table.add_row("Metadata", "\n".join(lines[:100]) or "No matching fields returned")
+        console.print(table)
+        path = _report_path("apk-inspector-plus")
+        path.write_text(f"Package: {selected}\nDevice: {serial}\nTime: {datetime.now().isoformat(timespec='seconds')}\n\nAPK paths:\n{paths.stdout}\n\nSelected package metadata:\n" + "\n".join(lines) + "\n\nRaw dumpsys output:\n" + details.stdout, encoding="utf-8")
+        console.print(f"[green]Full report saved:[/green] {path}")
+        console.print("[dim]Signature details vary by Android version and may be omitted by Package Manager. This does not cryptographically verify an APK file.[/dim]")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]APK inspection failed:[/red] {exc}")
+    pause()
+
+
+def one_click_health_check(adb: Path | None, console, pause: Callable[[], None]) -> None:
+    """Run a bundled read-only PC/ADB/Quest check and save one report."""
+    console.clear()
+    console.print(Panel("One report combining PC environment, ADB, Quest properties, root visibility, Frida, storage, and filtered logs.", title="One-Click Health Check", border_style="cyan"))
+    lines = [ "TheRootLibrary One-Click Health Check", f"Time: {datetime.now().isoformat(timespec='seconds')}", f"Computer: {platform.platform()}", "" ]
+    if adb is None:
+        lines.append("ADB: NOT FOUND")
+        console.print("[yellow]ADB was not found. PC-only checks will still be collected.[/yellow]")
+    else:
+        lines.append(f"ADB executable: {adb}")
+        try:
+            version = subprocess.run([str(adb), "version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10, check=False)
+            lines.extend(["ADB VERSION", version.stdout.strip() or version.stderr.strip(), ""])
+            devices = [(s, state) for s, state in _devices(adb) if state == "device"]
+            lines.append(f"Authorized ADB devices: {len(devices)}")
+            if devices:
+                serial = devices[0][0]
+                if len(devices) > 1:
+                    console.print(f"[cyan]{len(devices)} authorized devices found; selecting the first for the automated snapshot.[/cyan]")
+                    serial = _choose_device(adb, console) or ""
+                if serial:
+                    lines.extend([f"Selected device: {serial}", "", "QUEST PROPERTIES"])
+                    lines.extend(f"{key}: {value}" for key, value in _properties(adb, serial).items())
+                    for label, args in [
+                        ("ROOT CHECK", ("shell", "su", "-c", "id")),
+                        ("FRIDA SERVER", ("shell", "pidof", "frida-server")),
+                        ("BATTERY", ("shell", "dumpsys", "battery")),
+                        ("STORAGE", ("shell", "df", "-h", "/data")),
+                    ]:
+                        result = _run(adb, serial, *args, timeout=20)
+                        lines.extend(["", label, result.stdout.strip() or result.stderr.strip() or f"exit code {result.returncode}"])
+                    logs = _run(adb, serial, "logcat", "-d", "-t", "1200", timeout=45)
+                    pattern = re.compile(r"unity|il2cpp|fatal|exception|crash|frida|singularity|error", re.I)
+                    filtered = [line for line in logs.stdout.splitlines() if pattern.search(line)]
+                    lines.extend(["", "FILTERED LOGCAT", *filtered[-500:]])
+            else:
+                lines.append("No authorized ADB device was connected.")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            lines.append(f"ADB/Quest check failed: {exc}")
+    if os.name == "nt":
+        try:
+            tasks = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15, check=False)
+            lines.extend(["", "PCVR PROCESS CHECK"])
+            process_names = {line.split('","')[0].strip('"').lower() for line in tasks.stdout.splitlines() if line.strip()}
+            for exe in ("vrserver.exe", "vrmonitor.exe", "OVRServer_x64.exe", "VirtualDesktop.Streamer.exe", "ALVR.exe"):
+                lines.append(f"{exe}: {'running' if exe.lower() in process_names else 'not detected'}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            lines.append(f"PCVR check failed: {exc}")
+    path = _report_path("quest-health-check")
+    try:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        console.print(f"[green]Health-check report saved:[/green] {path}")
+        console.print(f"Collected {len(lines)} report lines.")
+        console.print("[dim]A health check is a snapshot, not a definitive exploit-compatibility or hardware diagnosis. Review logs before sharing.[/dim]")
+    except OSError as exc:
+        console.print(f"[red]Could not save health-check report:[/red] {exc}")
+    pause()
+
+
+def mod_workspace(console, pause: Callable[[], None]) -> None:
+    """Keep per-game notes, package IDs, script paths, and log/report references."""
+    console.clear()
+    console.print(Panel(f"Local per-game modding notes and references\n{MOD_WORKSPACE}", title="Mod Workspace", border_style="cyan"))
+    MOD_WORKSPACE.mkdir(parents=True, exist_ok=True)
+    index_path = MOD_WORKSPACE / "workspace.json"
+    entries = _load_json_file(index_path, {})
+    if not isinstance(entries, dict):
+        entries = {}
+    table = Table(title="Saved game workspaces", box=box.ROUNDED, header_style="bold cyan")
+    table.add_column("#")
+    table.add_column("Game")
+    table.add_column("Package ID")
+    table.add_column("Updated")
+    names = sorted(entries)
+    for i, name in enumerate(names, 1):
+        item = entries[name]
+        table.add_row(str(i), name, item.get("package_id", ""), item.get("updated", ""))
+    if names:
+        console.print(table)
+    else:
+        console.print("[dim]No game workspaces yet. Create one to keep notes and useful paths together.[/dim]")
+    action = console.input("N = new game, E = edit/view, B = back › ").strip().lower()
+    if action in {"b", "back", "q"}:
+        return
+    if action == "n":
+        name = console.input("Game name › ").strip()
+        if not name:
+            return
+        if name in entries:
+            console.print("[yellow]That game already has a workspace; choose E to edit it.[/yellow]")
+            pause()
+            return
+        entries[name] = {"package_id": "", "notes": "", "scripts": [], "logs": [], "created": datetime.now().isoformat(timespec="seconds")}
+    elif action == "e":
+        name = console.input("Exact game name to edit › ").strip()
+        if name not in entries:
+            console.print("[yellow]Game workspace not found.[/yellow]")
+            pause()
+            return
+    else:
+        console.print("[yellow]Unknown action.[/yellow]")
+        pause()
+        return
+    item = entries[name]
+    console.print("1. Set package ID   2. Replace notes   3. Add script/path reference   4. Add log/report reference   5. View details   6. Save")
+    while True:
+        choice = console.input(f"{name} › ").strip().lower()
+        if choice in {"6", "b", "q"}:
+            break
+        if choice == "1":
+            item["package_id"] = console.input("Package ID › ").strip()
+        elif choice == "2":
+            console.print("Enter notes on one line (use semicolons to separate thoughts).")
+            item["notes"] = console.input("Notes › ").strip()
+        elif choice == "3":
+            value = console.input("Script or folder path › ").strip()
+            if value:
+                item.setdefault("scripts", []).append(value)
+        elif choice == "4":
+            value = console.input("Log/report path or short reference › ").strip()
+            if value:
+                item.setdefault("logs", []).append(value)
+        elif choice == "5":
+            console.print_json(json.dumps(item, indent=2, ensure_ascii=False))
+        else:
+            console.print("[yellow]Choose 1–6 or B to save.[/yellow]")
+    item["updated"] = datetime.now().isoformat(timespec="seconds")
+    entries[name] = item
+    index_path.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-")[:80] or "game"
+    note_path = MOD_WORKSPACE / f"{slug}.md"
+    note_path.write_text(
+        f"# {name}\n\nUpdated: {item['updated']}\n\n"
+        f"**Package ID:** {item.get('package_id', '')}\n\n"
+        f"## Notes\n{item.get('notes', '')}\n\n"
+        "## Script / folder references\n" + "\n".join(f"- {x}" for x in item.get("scripts", [])) + "\n\n"
+        "## Log / report references\n" + "\n".join(f"- {x}" for x in item.get("logs", [])) + "\n",
+        encoding="utf-8",
+    )
+    console.print(f"[green]Workspace saved:[/green] {index_path}\nMarkdown notes: {note_path}")
+    pause()
+
+
 def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Callable[[], None]) -> None:
     while True:
         console.clear()
@@ -536,6 +830,11 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
         menu.add_row("10", "Live Quest dashboard (battery, storage, memory)")
         menu.add_row("11", "Capture Quest screenshot to PC")
         menu.add_row("12", "Export installed third-party app inventory")
+        menu.add_row("13", "Device profiles (save/compare headset builds)")
+        menu.add_row("14", "Live logcat viewer (filter + save)")
+        menu.add_row("15", "APK Inspector Plus (version/install/signature metadata)")
+        menu.add_row("16", "One-click health check (combined report)")
+        menu.add_row("17", "Per-game mod workspace (notes, paths, package IDs)")
         menu.add_row("B", "Back to main menu")
         console.print(menu)
         choice = console.input("Select an option › ").strip().lower()
@@ -544,12 +843,36 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
         if choice == "8":
             pcvr_check(console, pause)
             continue
-        if choice in {"10", "11", "12"}:
+        if choice in {"10", "11", "12", "13", "14", "15", "16", "17"}:
+            if choice == "17":
+                mod_workspace(console, pause)
+                continue
+            if choice == "16":
+                one_click_health_check(adb, console, pause)
+                continue
+            if choice == "13" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
+            if choice == "14" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
+            if choice == "15" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
             if adb is None:
                 console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
                 pause()
                 continue
-            if choice == "10":
+            if choice == "13":
+                device_profiles(adb, console, pause)
+            elif choice == "14":
+                live_logcat_viewer(adb, console, pause)
+            elif choice == "15":
+                apk_inspector_plus(adb, console, pause)
+            elif choice == "10":
                 quest_live_dashboard(adb, console, pause)
             elif choice == "11":
                 capture_quest_screenshot(adb, console, pause)
