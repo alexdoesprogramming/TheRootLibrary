@@ -276,6 +276,140 @@ def install_frida_server() -> None:
     pause()
 
 
+
+def start_frida_server() -> None:
+    """Push the downloaded Frida server to an authorized device and try to start it as root."""
+    clear_screen()
+    header()
+    adb = find_adb()
+    server_binary = INSTALL_DIR / "frida-server"
+
+    if not adb:
+        console.print("[yellow]ADB is not installed. Install Platform Tools first.[/yellow]")
+        pause()
+        return
+    if not server_binary.is_file() or server_binary.stat().st_size == 0:
+        console.print("[yellow]Frida server binary was not found on this PC.[/yellow]")
+        console.print("[dim]Choose Install Frida server into Platform Tools first.[/dim]")
+        pause()
+        return
+
+    try:
+        devices_result = run_adb(adb, "devices")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Could not query ADB devices:[/red] {exc}")
+        pause()
+        return
+
+    devices = []
+    for line in devices_result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            devices.append(parts[0])
+
+    if not devices:
+        console.print("[yellow]No authorized ADB device detected.[/yellow]")
+        console.print("[dim]Connect the Quest and accept the USB debugging prompt, then retry.[/dim]")
+        pause()
+        return
+
+    if len(devices) == 1:
+        serial = devices[0]
+    else:
+        console.print("[bold]Choose the target device:[/bold]")
+        for index, device_serial in enumerate(devices, start=1):
+            console.print(f"  [cyan]{index}.[/cyan] {device_serial}")
+        choice = console.input("Device number (or B to cancel) › ").strip().lower()
+        if choice in {"b", "back", "q"}:
+            return
+        if not choice.isdigit() or not 1 <= int(choice) <= len(devices):
+            console.print("[yellow]Invalid selection.[/yellow]")
+            pause()
+            return
+        serial = devices[int(choice) - 1]
+
+    console.print(f"[cyan]Target device:[/cyan] {serial}")
+    console.print(f"[cyan]Local server binary:[/cyan] {server_binary}")
+    console.print(
+        Panel(
+            "This will push Frida server to /data/local/tmp/frida-server and attempt to launch it "
+            "with su. The headset must already have working root access. "
+            "This does not root the device or modify boot/system partitions.",
+            title="Start Frida server",
+            border_style="yellow",
+        )
+    )
+    if console.input("Push and start Frida server? Type START to confirm › ").strip() != "START":
+        console.print("[dim]Cancelled. Nothing was pushed or started.[/dim]")
+        pause()
+        return
+
+    remote_path = "/data/local/tmp/frida-server"
+    try:
+        # Reuse a running server if root can see its PID.
+        existing = run_adb(adb, "-s", serial, "shell", "su", "-c", "pidof frida-server")
+        if existing.returncode == 0 and existing.stdout.strip():
+            console.print(
+                f"[green]Frida server already appears to be running (PID {existing.stdout.strip()}).[/green]"
+            )
+            pause()
+            return
+
+        console.print("[cyan]Pushing Frida server to the headset…[/cyan]")
+        push_result = run_adb(adb, "-s", serial, "push", str(server_binary), remote_path, timeout=120)
+        if push_result.stdout.strip():
+            console.print(push_result.stdout.strip())
+        if push_result.stderr.strip():
+            console.print(push_result.stderr.strip())
+        if push_result.returncode != 0:
+            raise RuntimeError("ADB push failed; see the output above.")
+
+        console.print("[cyan]Setting executable permission and attempting root launch…[/cyan]")
+        launch_command = (
+            f"chmod 755 {remote_path} && "
+            f"( {remote_path} >/dev/null 2>&1 & )"
+        )
+        launch_result = run_adb(
+            adb, "-s", serial, "shell", "su", "-c", launch_command, timeout=20
+        )
+        if launch_result.stdout.strip():
+            console.print(launch_result.stdout.strip())
+        if launch_result.stderr.strip():
+            console.print(launch_result.stderr.strip())
+        if launch_result.returncode != 0:
+            raise RuntimeError(
+                "The root launch command failed. Confirm that su works on the headset."
+            )
+
+        # Verify startup; allow a moment for the process to initialize.
+        import time
+        for _ in range(3):
+            verify = run_adb(
+                adb, "-s", serial, "shell", "su", "-c", "pidof frida-server", timeout=10
+            )
+            if verify.returncode == 0 and verify.stdout.strip():
+                console.print(
+                    f"[green]✓ Frida server appears to be running as root. PID: "
+                    f"{verify.stdout.strip()}[/green]"
+                )
+                console.print(
+                    "[dim]Use a matching Frida client version to connect. The server may stop "
+                    "when the headset reboots.[/dim]"
+                )
+                break
+            time.sleep(1)
+        else:
+            detail = verify.stderr.strip() or verify.stdout.strip()
+            raise RuntimeError(
+                "The launch command returned, but Frida server could not be verified as running. "
+                + (f"Device response: {detail}" if detail else
+                   "Check root access, ABI/version compatibility, and whether the binary can execute.")
+            )
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        console.print(f"[red]Could not start Frida server:[/red] {exc}")
+    pause()
+
+
 def install_singularity_apk() -> None:
     """Download the latest official Singularity APK and sideload it to a selected ADB device."""
     clear_screen()
@@ -614,8 +748,9 @@ def main_menu() -> None:
         menu.add_row("2", "Check ADB and connected devices")
         menu.add_row("3", "Browse, extract & run a mod ZIP")
         menu.add_row("4", "Install Frida server into Platform Tools")
-        menu.add_row("5", "Download latest Singularity APK & install via ADB")
-        menu.add_row("6", "About & safety")
+        menu.add_row("5", "Push & try to start Frida server on device")
+        menu.add_row("6", "Download latest Singularity APK & install via ADB")
+        menu.add_row("7", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -636,8 +771,10 @@ def main_menu() -> None:
         elif choice == "4":
             install_frida_server()
         elif choice == "5":
-            install_singularity_apk()
+            start_frida_server()
         elif choice == "6":
+            install_singularity_apk()
+        elif choice == "7":
             clear_screen()
             header()
             console.print(
