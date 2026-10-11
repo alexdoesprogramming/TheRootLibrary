@@ -116,6 +116,10 @@ The Quest Toolkit adds these helpers:
 - **APK Inspector Plus (menu option 9 → 15):** displays package version/install metadata where exposed, APK paths, and selected signing-related fields from Android's package metadata. It does not claim to cryptographically verify APK files.
 - **One-Click Health Check (menu option 9 → 16):** combines PC/ADB checks, headset properties, root/Frida visibility, battery/storage, filtered logs, and common PCVR process checks into one report.
 - **Per-Game Mod Workspace (menu option 9 → 17):** keeps package IDs, notes, script/folder paths, and log/report references in local JSON plus a Markdown note per game.
+- **APK Backup Exporter (menu option 9 → 18):** pulls the selected installed package's base/split APK files to the PC and writes a SHA-256 manifest. It does not export private app data; the user must type `PULL` to confirm.
+- **App Permission Audit (menu option 9 → 19):** exports permission-related metadata from Android Package Manager for a selected installed package. The output is best-effort and varies by Android version.
+- **Crash & ANR Triage (menu option 9 → 20):** scans a bounded logcat snapshot for Java fatal exceptions, ANRs, native signals, and Unity/IL2CPP markers, then saves a report.
+- **Local APK Hash Lab (menu option 9 → 21):** computes SHA-256 for a local file and optionally compares it with a supplied digest. Files are read locally and never uploaded by this feature. A matching hash is only as trustworthy as the source of the expected digest.
 
 All firmware records and diagnostic reports are local to the PC. Review reports before sharing them because logs may contain device identifiers, package names, or other private information. The compatibility database is a notes/evidence tracker, not an exploit verifier. This toolkit does not automatically exploit the headset, unlock a bootloader, flash firmware, or write to boot/system partitions.
 
