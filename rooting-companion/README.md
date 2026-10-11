@@ -54,7 +54,7 @@ This option only downloads the server binary to the PC; it does not push or star
 
 ### Start Frida server
 
-Choose **Push & try to start Frida server on device** after installing the server binary. The tool lets you select an authorized ADB device, asks you to type `START`, pushes the binary to `/data/local/tmp/frida-server`, applies executable permission, attempts to launch it with `su`, and checks for a running PID. The headset must already have working root access; this does not root the device. The process may stop after a reboot, and Frida client/server versions should match. Only use dynamic instrumentation on devices and apps you own or are authorized to test.
+Choose **Push & try to start Frida server on device** after installing the server binary. The tool lets you select an authorized ADB device, asks you to type `START`, pushes the binary to `/data/local/tmp/frida-server`, applies executable permission, runs `adb shell "/data/local/tmp/frida-server &"`, and checks for a running PID. The headset must already have working root access; this does not root the device. The process may stop after a reboot, and Frida client/server versions should match. Only use dynamic instrumentation on devices and apps you own or are authorized to test.
 
 ## Mod ZIP launcher
 
