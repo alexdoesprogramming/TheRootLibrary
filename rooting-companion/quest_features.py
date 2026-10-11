@@ -814,28 +814,50 @@ def mod_workspace(console, pause: Callable[[], None]) -> None:
 def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Callable[[], None]) -> None:
     while True:
         console.clear()
-        console.print(Panel("Quest-only diagnostics and workflow helpers. No boot/system partition writes.", title="QUEST TOOLKIT", border_style="cyan"))
-        menu = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
-        menu.add_column("Key", style="bold cyan", width=5)
-        menu.add_column("Feature")
-        menu.add_row("1", "Quest build fingerprint & compatibility checker")
-        menu.add_row("2", "Temporary root / Singularity / Frida status")
-        menu.add_row("3", "Firmware & exploit status database")
-        menu.add_row("4", "Diagnostic report + filtered logcat export")
-        menu.add_row("5", "IL2CPP / app package inspector")
-        menu.add_row("6", "Frida client/server diagnostics")
-        menu.add_row("7", "Connect to existing wireless ADB endpoint")
-        menu.add_row("8", "PCVR runtime quick check")
-        menu.add_row("9", "Root persistence & safety guide")
-        menu.add_row("10", "Live Quest dashboard (battery, storage, memory)")
-        menu.add_row("11", "Capture Quest screenshot to PC")
-        menu.add_row("12", "Export installed third-party app inventory")
-        menu.add_row("13", "Device profiles (save/compare headset builds)")
-        menu.add_row("14", "Live logcat viewer (filter + save)")
-        menu.add_row("15", "APK Inspector Plus (version/install/signature metadata)")
-        menu.add_row("16", "One-click health check (combined report)")
-        menu.add_row("17", "Per-game mod workspace (notes, paths, package IDs)")
-        menu.add_row("B", "Back to main menu")
+        console.print(Panel(
+            "[bold cyan]THE ROOT LIBRARY  •  QUEST TOOLKIT[/bold cyan]\n"
+            "Device diagnostics, root/Frida helpers, app research, and per-game notes.\n"
+            "[dim]Read-only checks by default • no automatic exploit, flashing, or boot/system writes[/dim]",
+            title="QUEST TOOLKIT  /  v0.7",
+            subtitle="Select a tool • B returns",
+            border_style="cyan",
+            padding=(1, 2),
+        ))
+        if adb is None:
+            console.print(Panel("[yellow]ADB unavailable[/yellow] — install Platform Tools from the main menu to use headset tools.", border_style="yellow"))
+        else:
+            try:
+                connected = _devices(adb)
+                ready = sum(1 for _, state in connected if state == "device")
+                console.print(Panel(
+                    f"[green]{ready} authorized device(s) ready[/green]  •  {len(connected)} ADB endpoint(s) listed  •  [dim]{adb}[/dim]",
+                    title="CONNECTION STATUS",
+                    border_style="green" if ready else "yellow",
+                ))
+            except (OSError, subprocess.TimeoutExpired):
+                console.print(Panel("[yellow]Could not query ADB status right now.[/yellow]", border_style="yellow"))
+        menu = Table(box=box.ROUNDED, header_style="bold cyan", padding=(0, 1), expand=True)
+        menu.add_column("KEY", style="bold cyan", width=5, justify="center")
+        menu.add_column("TOOL", style="bold")
+        menu.add_column("PURPOSE", style="dim", overflow="fold")
+        menu.add_row("1", "Quest build fingerprint & compatibility checker", "Model, firmware, compatibility notes")
+        menu.add_row("2", "Temporary root / Singularity / Frida status", "Read-only root and process checks")
+        menu.add_row("3", "Firmware & exploit status database", "Local evidence tracker")
+        menu.add_row("4", "Diagnostic report + filtered logcat export", "Collect logs and device details")
+        menu.add_row("5", "IL2CPP / app package inspector", "Find packages and metadata")
+        menu.add_row("6", "Frida client/server diagnostics", "Check local and headset Frida")
+        menu.add_row("7", "Connect to existing wireless ADB endpoint", "Connect only; does not enable it")
+        menu.add_row("8", "PCVR runtime quick check", "SteamVR, Meta, ALVR, Virtual Desktop")
+        menu.add_row("9", "Root persistence & safety guide", "Temporary root and partition cautions")
+        menu.add_row("10", "Live Quest dashboard (battery, storage, memory)", "Battery, storage, memory, uptime")
+        menu.add_row("11", "Capture Quest screenshot to PC", "Save headset display as PNG")
+        menu.add_row("12", "Export installed third-party app inventory", "TXT + JSON package inventory")
+        menu.add_row("13", "Device profiles (save/compare headset builds)", "Remember device snapshots locally")
+        menu.add_row("14", "Live logcat viewer (filter + save)", "Refresh filtered logs")
+        menu.add_row("15", "APK Inspector Plus (version/install/signature metadata)", "Version, paths, install/signature fields")
+        menu.add_row("16", "One-click health check (combined report)", "PC + headset diagnostics in one file")
+        menu.add_row("17", "Per-game mod workspace (notes, paths, package IDs)", "Keep modding notes organized locally")
+        menu.add_row("B", "Back to main menu", "Return to the main menu")
         console.print(menu)
         choice = console.input("Select an option › ").strip().lower()
         if choice in {"b", "back", "q"}:
