@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform
 import re
@@ -811,6 +812,225 @@ def mod_workspace(console, pause: Callable[[], None]) -> None:
     pause()
 
 
+
+
+def apk_backup_exporter(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Pull an installed package's APK split set to the PC and write a hash manifest."""
+    console.clear()
+    console.print(Panel(
+        "Export installed APK files for apps you own or are authorized to archive. This copies APKs only; it does not export private app data.",
+        title="APK Backup Exporter", border_style="cyan"
+    ))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        result = _run(adb, serial, "shell", "pm", "list", "packages", timeout=30)
+        packages = sorted(
+            line.strip().removeprefix("package:")
+            for line in result.stdout.splitlines() if line.startswith("package:")
+        )
+        query = console.input("Filter package IDs › ").strip().lower()
+        matches = [name for name in packages if query in name.lower()]
+        for i, name in enumerate(matches[:150], 1):
+            console.print(f"[cyan]{i:>3}.[/cyan] {name}")
+        package = console.input("Exact package ID to export (blank = back) › ").strip()
+        if not package:
+            return
+        if package not in packages:
+            console.print("[yellow]That package is not in the installed package list.[/yellow]")
+            pause()
+            return
+        paths_result = _run(adb, serial, "shell", "pm", "path", package, timeout=20)
+        remote_paths = []
+        for line in paths_result.stdout.splitlines():
+            value = line.strip().removeprefix("package:")
+            if value.startswith("/") and ".." not in Path(value).parts:
+                remote_paths.append(value)
+        if not remote_paths:
+            console.print("[red]Android did not report any APK paths for this package.[/red]")
+            pause()
+            return
+        console.print(f"Found {len(remote_paths)} APK file(s) for [bold]{package}[/bold].")
+        console.print("[dim]This may include base.apk and split APKs. App-private data is not included.[/dim]")
+        if console.input("Type PULL to export these APKs to this PC › ").strip() != "PULL":
+            console.print("[dim]Cancelled; no APKs were pulled.[/dim]")
+            pause()
+            return
+        safe_package = re.sub(r"[^A-Za-z0-9._-]+", "_", package)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = REPORT_DIR / "apk-backups" / f"{safe_package}-{stamp}"
+        target.mkdir(parents=True, exist_ok=False)
+        manifest = [
+            "TheRootLibrary APK Backup Manifest",
+            f"Time: {datetime.now().isoformat(timespec='seconds')}",
+            f"Device: {serial}",
+            f"Package: {package}",
+            "Note: APK files only; private app data is not included.",
+            "",
+        ]
+        for index, remote in enumerate(remote_paths, 1):
+            filename = Path(remote).name or f"split-{index}.apk"
+            local = target / filename
+            pulled = _run(adb, serial, "pull", remote, str(local), timeout=90)
+            if pulled.returncode != 0 or not local.is_file():
+                manifest.append(f"FAILED: {remote} — {pulled.stderr.strip() or pulled.stdout.strip()}")
+                continue
+            digest = hashlib.sha256()
+            with local.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest.append(f"{filename} | {local.stat().st_size} bytes | SHA256 {digest.hexdigest()} | source {remote}")
+        manifest_path = target / "manifest.txt"
+        manifest_path.write_text("\n".join(manifest) + "\n", encoding="utf-8")
+        console.print(f"[green]Export finished.[/green] Files and SHA-256 manifest: {target}")
+        console.print("[yellow]Keep exported APKs private and respect app licenses and redistribution rules.[/yellow]")
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        console.print(f"[red]APK export failed:[/red] {exc}")
+    pause()
+
+
+def permission_audit(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Create a best-effort report of requested and reported permission states."""
+    console.clear()
+    console.print(Panel(
+        "Inspect Package Manager's permission metadata for one installed package. Output varies by Android version.",
+        title="App Permission Audit", border_style="cyan"
+    ))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        result = _run(adb, serial, "shell", "pm", "list", "packages", timeout=30)
+        packages = sorted(
+            line.strip().removeprefix("package:")
+            for line in result.stdout.splitlines() if line.startswith("package:")
+        )
+        query = console.input("Filter package IDs › ").strip().lower()
+        matches = [name for name in packages if query in name.lower()]
+        for i, name in enumerate(matches[:150], 1):
+            console.print(f"[cyan]{i:>3}.[/cyan] {name}")
+        package = console.input("Exact package ID to audit (blank = back) › ").strip()
+        if not package:
+            return
+        if package not in packages:
+            console.print("[yellow]Package not found on this device.[/yellow]")
+            pause()
+            return
+        details = _run(adb, serial, "shell", "dumpsys", "package", package, timeout=30)
+        permission_lines = [
+            line.rstrip() for line in details.stdout.splitlines()
+            if re.search(r"android\\.permission\\.|permission\\[|granted=|denied=|runtime permissions|install permissions|requested permissions", line, re.I)
+        ]
+        if not permission_lines:
+            permission_lines = ["No permission fields were exposed in the package dump."]
+        path = _report_path("permission-audit")
+        path.write_text(
+            f"TheRootLibrary Permission Audit\nTime: {datetime.now().isoformat(timespec='seconds')}\n"
+            f"Device: {serial}\nPackage: {package}\n\n" + "\n".join(permission_lines) + "\n",
+            encoding="utf-8",
+        )
+        console.print(f"[green]Saved permission metadata report:[/green] {path}")
+        for line in permission_lines[:80]:
+            console.print(line, markup=False, soft_wrap=True)
+        if len(permission_lines) > 80:
+            console.print(f"[dim]… {len(permission_lines) - 80} more lines are in the report.[/dim]")
+        console.print("[dim]This is a metadata snapshot, not a security verdict or a guarantee of effective runtime access.[/dim]")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Permission audit failed:[/red] {exc}")
+    pause()
+
+
+def crash_triage(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Summarize common crash/ANR markers from a bounded logcat snapshot."""
+    console.clear()
+    console.print(Panel(
+        "Scan the latest 3,000 logcat lines for crash, ANR, Unity, IL2CPP, and native signal markers.",
+        title="Crash & ANR Triage", border_style="cyan"
+    ))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    query = console.input("Extra filter regex (optional; blank = all crash markers) › ").strip()
+    base = r"fatal exception|FATAL EXCEPTION|ANR in |am_anr|tombstone|signal 11|SIGSEGV|SIGABRT|Unity|IL2CPP|crash|AndroidRuntime"
+    try:
+        pattern = re.compile(f"(?:{base})" + (f"|(?:{query})" if query else ""), re.I)
+    except re.error as exc:
+        console.print(f"[yellow]Invalid extra regex ({exc}); using built-in crash markers only.[/yellow]")
+        pattern = re.compile(base, re.I)
+    try:
+        result = _run(adb, serial, "logcat", "-d", "-t", "3000", "-v", "time", timeout=45)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "logcat returned a non-zero exit code")
+        matches = [line for line in result.stdout.splitlines() if pattern.search(line)]
+        categories = {
+            "Java fatal exception": re.compile(r"FATAL EXCEPTION|AndroidRuntime", re.I),
+            "ANR": re.compile(r"ANR in |am_anr", re.I),
+            "Native crash / signal": re.compile(r"tombstone|SIGSEGV|SIGABRT|signal 11", re.I),
+            "Unity / IL2CPP": re.compile(r"Unity|IL2CPP", re.I),
+        }
+        summary = [f"{label}: {sum(1 for line in matches if regex.search(line))}" for label, regex in categories.items()]
+        path = _report_path("crash-triage")
+        path.write_text(
+            f"TheRootLibrary Crash & ANR Triage\nTime: {datetime.now().isoformat(timespec='seconds')}\n"
+            f"Device: {serial}\nScanned lines: {len(result.stdout.splitlines())}\nMatched lines: {len(matches)}\n\n"
+            + "\n".join(summary) + "\n\nMATCHING LOGCAT\n" + "\n".join(matches[-1000:]) + "\n",
+            encoding="utf-8",
+        )
+        console.print(Panel("\n".join(summary) + f"\n\nMatched lines: {len(matches)}", title="Triage Summary", border_style="cyan"))
+        for line in matches[-60:]:
+            console.print(line, markup=False, soft_wrap=True)
+        console.print(f"\n[green]Full report saved:[/green] {path}")
+        console.print("[dim]Log matches are clues, not proof of a single root cause. Review the surrounding logs.[/dim]")
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        console.print(f"[red]Crash triage failed:[/red] {exc}")
+    pause()
+
+
+def apk_hash_lab(console, pause: Callable[[], None]) -> None:
+    """Calculate a local APK's SHA-256 hash and optionally compare it to an expected digest."""
+    console.clear()
+    console.print(Panel(
+        "Calculate a SHA-256 digest for an APK or other file on this PC. The file is read locally and never uploaded.",
+        title="APK Hash Lab", border_style="cyan"
+    ))
+    raw_path = console.input("Full file path (B = back) › ").strip().strip('"')
+    if raw_path.lower() in {"b", "back", "q"} or not raw_path:
+        return
+    path = Path(raw_path).expanduser()
+    if not path.is_file():
+        console.print("[yellow]That file path does not point to an existing file.[/yellow]")
+        pause()
+        return
+    try:
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        actual = digest.hexdigest()
+        console.print(f"[bold]File:[/bold] {path.name}")
+        console.print(f"[bold]Size:[/bold] {size:,} bytes")
+        console.print(f"[bold]SHA-256:[/bold] [cyan]{actual}[/cyan]")
+        expected = console.input("Expected SHA-256 to compare (blank = skip) › ").strip().lower()
+        if expected:
+            expected = expected.removeprefix("sha256:")
+            if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                console.print("[yellow]Expected digest must be 64 hexadecimal characters.[/yellow]")
+            elif actual == expected:
+                console.print("[green]MATCH — digest is identical.[/green]")
+            else:
+                console.print("[red]MISMATCH — digest differs.[/red]")
+        console.print("[dim]A matching hash only proves the bytes match the supplied digest; trust depends on where that digest came from.[/dim]")
+    except OSError as exc:
+        console.print(f"[red]Could not read file:[/red] {exc}")
+    pause()
+
+
 def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Callable[[], None]) -> None:
     while True:
         console.clear()
@@ -857,6 +1077,10 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
         menu.add_row("15", "APK Inspector Plus (version/install/signature metadata)", "Version, paths, install/signature fields")
         menu.add_row("16", "One-click health check (combined report)", "PC + headset diagnostics in one file")
         menu.add_row("17", "Per-game mod workspace (notes, paths, package IDs)", "Keep modding notes organized locally")
+        menu.add_row("18", "APK Backup Exporter (pull installed APK/splits)", "Export APKs + SHA-256 manifest")
+        menu.add_row("19", "App Permission Audit", "Export permission metadata for a package")
+        menu.add_row("20", "Crash & ANR Triage", "Summarize Unity/IL2CPP/Android crash logs")
+        menu.add_row("21", "Local APK Hash Lab", "Calculate/compare SHA-256 offline")
         menu.add_row("B", "Back to main menu", "Return to the main menu")
         console.print(menu)
         choice = console.input("Select an option › ").strip().lower()
@@ -865,9 +1089,21 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
         if choice == "8":
             pcvr_check(console, pause)
             continue
-        if choice in {"10", "11", "12", "13", "14", "15", "16", "17"}:
+        if choice in {"10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"}:
             if choice == "17":
                 mod_workspace(console, pause)
+                continue
+            if choice == "18" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
+            if choice == "19" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
+            if choice == "20" and adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
                 continue
             if choice == "16":
                 one_click_health_check(adb, console, pause)
@@ -900,6 +1136,15 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
                 capture_quest_screenshot(adb, console, pause)
             elif choice == "12":
                 export_app_inventory(adb, console, pause)
+            elif choice == "18":
+                apk_backup_exporter(adb, console, pause)
+            elif choice == "19":
+                permission_audit(adb, console, pause)
+            elif choice == "20":
+                crash_triage(adb, console, pause)
+            continue
+        if choice == "21":
+            apk_hash_lab(console, pause)
             continue
         if choice == "9":
             console.clear()
