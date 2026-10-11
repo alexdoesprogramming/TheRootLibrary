@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import lzma
 import shutil
 import subprocess
 import sys
@@ -111,6 +113,167 @@ def install_platform_tools() -> Path:
 
     console.print(f"[green]✓[/green] Platform Tools installed to [bold]{INSTALL_DIR}[/bold]")
     return INSTALL_DIR / "adb.exe"
+
+
+
+def install_frida_server() -> None:
+    """Download the matching official Frida server binary beside adb.exe."""
+    clear_screen()
+    header()
+    adb = find_adb()
+    if not adb:
+        console.print("[yellow]ADB is not installed. Install Platform Tools first.[/yellow]")
+        pause()
+        return
+
+    try:
+        result = run_adb(adb, "devices")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Could not query ADB devices:[/red] {exc}")
+        pause()
+        return
+
+    devices = []
+    for line in result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            devices.append(parts[0])
+
+    if not devices:
+        console.print("[yellow]No authorized ADB device detected.[/yellow]")
+        console.print("[dim]Connect the headset/device, accept the USB debugging prompt, and retry.[/dim]")
+        pause()
+        return
+
+    if len(devices) == 1:
+        serial = devices[0]
+    else:
+        console.print("[bold]Choose the target device:[/bold]")
+        for index, serial_value in enumerate(devices, start=1):
+            console.print(f"  [cyan]{index}.[/cyan] {serial_value}")
+        choice = console.input("Device number (or B to cancel) › ").strip().lower()
+        if choice in {"b", "back", "q"}:
+            return
+        if not choice.isdigit() or not 1 <= int(choice) <= len(devices):
+            console.print("[yellow]Invalid selection.[/yellow]")
+            pause()
+            return
+        serial = devices[int(choice) - 1]
+
+    try:
+        abi_result = run_adb(adb, "-s", serial, "shell", "getprop", "ro.product.cpu.abi")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Could not read device architecture:[/red] {exc}")
+        pause()
+        return
+    abi = abi_result.stdout.strip().splitlines()[0] if abi_result.stdout.strip() else ""
+    abi_map = {
+        "arm64-v8a": "android-arm64",
+        "armeabi-v7a": "android-arm",
+        "armeabi": "android-arm",
+        "x86_64": "android-x86_64",
+        "x86": "android-x86",
+    }
+    frida_arch = abi_map.get(abi)
+    if not frida_arch:
+        console.print(f"[red]Unsupported or unknown Android ABI:[/red] {abi or 'not reported'}")
+        pause()
+        return
+
+    # Prefer the Frida client version available on this PC; server/client versions should match.
+    client_version = None
+    frida_client = shutil.which("frida")
+    if frida_client:
+        try:
+            client_result = subprocess.run(
+                [frida_client, "--version"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if client_result.returncode == 0:
+                client_version = client_result.stdout.strip().splitlines()[0].strip().lstrip("v")
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    api_headers = {
+        "User-Agent": "TheRootLibrary/0.3",
+        "Accept": "application/vnd.github+json",
+    }
+    release_url = (
+        f"https://api.github.com/repos/frida/frida/releases/tags/{urllib.parse.quote(client_version)}"
+        if client_version
+        else "https://api.github.com/repos/frida/frida/releases/latest"
+    )
+    try:
+        request = urllib.request.Request(release_url, headers=api_headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            release = json.load(response)
+        tag = str(release.get("tag_name", "")).lstrip("v")
+        expected_name = f"frida-server-{tag}-{frida_arch}.xz"
+        assets = release.get("assets", [])
+        asset = next((item for item in assets if item.get("name") == expected_name), None)
+        if not asset:
+            raise RuntimeError(
+                f"Official Frida release {tag or '(unknown)'} has no asset named {expected_name}."
+            )
+        asset_url = asset.get("browser_download_url")
+        if not asset_url or not asset_url.startswith("https://github.com/frida/frida/releases/"):
+            raise RuntimeError("The release asset URL was missing or unexpected.")
+
+        console.print(f"[cyan]Device:[/cyan] {serial}  [cyan]ABI:[/cyan] {abi}")
+        console.print(f"[cyan]Frida server version:[/cyan] {tag}")
+        if not client_version:
+            console.print(
+                "[yellow]No Frida client was found on PATH. Use a matching Frida client version "
+                "before connecting to this server.[/yellow]"
+            )
+        elif tag != client_version:
+            console.print(
+                f"[yellow]Client version {client_version} differs from server version {tag}; "
+                "connections may fail.[/yellow]"
+            )
+
+        destination = INSTALL_DIR / "frida-server"
+        if destination.exists():
+            confirm_replace = console.input(
+                f"[yellow]{destination} already exists. Replace it? [y/N] [/yellow]"
+            ).strip().lower()
+            if confirm_replace != "y":
+                console.print("[dim]Cancelled; existing file was left untouched.[/dim]")
+                pause()
+                return
+
+        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+        compressed_path = INSTALL_DIR / "frida-server.xz"
+        console.print("[cyan]Downloading official Frida server release…[/cyan]")
+        request = urllib.request.Request(asset_url, headers={"User-Agent": "TheRootLibrary/0.3"})
+        with urllib.request.urlopen(request, timeout=60) as response, compressed_path.open("wb") as output:
+            shutil.copyfileobj(response, output)
+
+        temporary_binary = INSTALL_DIR / "frida-server.tmp"
+        try:
+            with lzma.open(compressed_path, "rb") as compressed, temporary_binary.open("wb") as output:
+                shutil.copyfileobj(compressed, output)
+            if temporary_binary.stat().st_size == 0:
+                raise RuntimeError("The decompressed Frida server binary is empty.")
+            temporary_binary.replace(destination)
+        finally:
+            compressed_path.unlink(missing_ok=True)
+            temporary_binary.unlink(missing_ok=True)
+
+        console.print(f"[green]✓ Frida server installed beside ADB:[/green] {destination}")
+        console.print(
+            "[dim]This only places the Android binary on your PC. It does not push or start "
+            "Frida server on the device.[/dim]"
+        )
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, lzma.LZMAError, RuntimeError) as exc:
+        console.print(f"[red]Frida server installation failed:[/red] {exc}")
+    pause()
 
 
 def show_adb_status() -> None:
@@ -333,7 +496,8 @@ def main_menu() -> None:
         menu.add_row("1", "Install / update official Android Platform Tools")
         menu.add_row("2", "Check ADB and connected devices")
         menu.add_row("3", "Browse, extract & run a mod ZIP")
-        menu.add_row("4", "About & safety")
+        menu.add_row("4", "Install Frida server into Platform Tools")
+        menu.add_row("5", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -352,6 +516,8 @@ def main_menu() -> None:
         elif choice == "3":
             choose_and_run_mod()
         elif choice == "4":
+            install_frida_server()
+        elif choice == "5":
             clear_screen()
             header()
             console.print(
