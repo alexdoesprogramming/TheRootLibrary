@@ -9,6 +9,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Detects ADB already on PATH or in the tool's install directory.
 - Lists connected devices and highlights common states such as `device`, `unauthorized`, and `offline`.
 - Browses the ZIP archives currently in the repository, downloads and safely extracts a selected archive, then lets you select and launch a `.bat` file inside it.
+- Downloads the official Frida server release for the connected Android device's ABI and places the decompressed binary beside `adb.exe` in the Platform Tools folder.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
 ## Requirements
@@ -36,6 +37,12 @@ Choose **Install / update official Android Platform Tools** from the menu to ins
 4. Select **Check ADB and connected devices**.
 
 Wireless ADB setup is intentionally not included in this first version.
+
+## Frida server installer
+
+Choose **Install Frida server into Platform Tools** with an authorized Android device connected. The tool reads the device ABI over ADB, downloads the corresponding official release asset from the Frida GitHub releases, decompresses it, and saves it as `frida-server` beside `adb.exe`. If the `frida` client is available on PATH, it prefers that version so the client and server can match. If no client is found, it uses the latest release and displays a compatibility warning.
+
+This only downloads the server binary to the PC; it does not push or start it on the headset. Frida server/client versions should match. Only use dynamic instrumentation on devices and apps you own or are authorized to test.
 
 ## Mod ZIP launcher
 
