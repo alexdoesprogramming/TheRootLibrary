@@ -10,6 +10,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Lists connected devices and highlights common states such as `device`, `unauthorized`, and `offline`.
 - Browses the ZIP archives currently in the repository, downloads and safely extracts a selected archive, then lets you select and launch a `.bat` file inside it.
 - Downloads the official Frida server release for the connected Android device's ABI and places the decompressed binary beside `adb.exe` in the Platform Tools folder.
+- Fetches the latest Singularity APK from the official GitHub Releases API and installs it to a selected authorized ADB device.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
 ## Requirements
@@ -37,6 +38,12 @@ Choose **Install / update official Android Platform Tools** from the menu to ins
 4. Select **Check ADB and connected devices**.
 
 Wireless ADB setup is intentionally not included in this first version.
+
+## Singularity APK installer
+
+Choose **Download latest Singularity APK & install via ADB** to check the official [Lumince/Singularity releases](https://github.com/Lumince/singularity/releases), automatically select the latest release's APK asset, download it, and sideload it to a selected authorized device using `adb install -r -g`. The tool asks you to type `INSTALL` before proceeding and removes the temporary APK afterward. The release version and asset name are discovered at runtime; no version is hard-coded.
+
+This installs or updates the Singularity app only. It does **not** trigger rooting, press **Root Now**, or change device partitions. Make sure the release is appropriate for your headset and firmware before using the app.
 
 ## Frida server installer
 
