@@ -10,6 +10,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Lists connected devices and highlights common states such as `device`, `unauthorized`, and `offline`.
 - Browses the ZIP archives currently in the repository, downloads and safely extracts a selected archive, then lets you select and launch a `.bat` file inside it.
 - Downloads the official Frida server release for the connected Android device's ABI and places the decompressed binary beside `adb.exe` in the Platform Tools folder.
+- Pushes the downloaded Frida server to an authorized device and attempts to start it as root, then checks whether a server PID is visible.
 - Fetches the latest Singularity APK from the official GitHub Releases API and installs it to a selected authorized ADB device.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
@@ -49,7 +50,11 @@ This installs or updates the Singularity app only. It does **not** trigger rooti
 
 Choose **Install Frida server into Platform Tools** with an authorized Android device connected. The tool reads the device ABI over ADB, downloads the corresponding official release asset from the Frida GitHub releases, decompresses it, and saves it as `frida-server` beside `adb.exe`. If the `frida` client is available on PATH, it prefers that version so the client and server can match. If no client is found, it uses the latest release and displays a compatibility warning.
 
-This only downloads the server binary to the PC; it does not push or start it on the headset. Frida server/client versions should match. Only use dynamic instrumentation on devices and apps you own or are authorized to test.
+This option only downloads the server binary to the PC; it does not push or start it on the headset.
+
+### Start Frida server
+
+Choose **Push & try to start Frida server on device** after installing the server binary. The tool lets you select an authorized ADB device, asks you to type `START`, pushes the binary to `/data/local/tmp/frida-server`, applies executable permission, attempts to launch it with `su`, and checks for a running PID. The headset must already have working root access; this does not root the device. The process may stop after a reboot, and Frida client/server versions should match. Only use dynamic instrumentation on devices and apps you own or are authorized to test.
 
 ## Mod ZIP launcher
 
