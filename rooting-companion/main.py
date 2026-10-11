@@ -631,8 +631,15 @@ def install_quest_apps() -> None:
         console.print("[cyan]Downloading APK…[/cyan]")
         with urllib.request.urlopen(request, timeout=90) as response:
             final_url = response.geturl()
-            if not final_url.startswith(app["allowed_prefix"]):
-                raise RuntimeError(f"Download redirected to an unexpected location: {final_url}")
+            final_host = urllib.parse.urlparse(final_url).hostname or ""
+            if choice == "2":
+                if not final_url.startswith(app["allowed_prefix"]):
+                    raise RuntimeError(f"CX File Explorer redirected to an unexpected location: {final_url}")
+            elif (
+                final_host not in {"github.com", "release-assets.githubusercontent.com"}
+                and not final_host.endswith(".githubusercontent.com")
+            ):
+                raise RuntimeError(f"GitHub release download redirected to an unexpected location: {final_url}")
             with apk_path.open("wb") as output:
                 shutil.copyfileobj(response, output)
 
