@@ -92,3 +92,26 @@ ADB is a powerful debugging interface. Only authorize computers you trust. The c
 - `main.py` — terminal interface and ADB setup/device detection
 - `requirements.txt` — Python dependency list
 
+
+
+## Quest Toolkit (menu option 9)
+
+The Quest Toolkit adds these helpers:
+
+- **Quest Inspector:** reads the headset model, device codename, build display ID/fingerprint, Android/SDK version, security patch, ABI, and verified-boot state. It compares the exact build display ID against the local compatibility database.
+- **Temporary Root Status:** checks whether `su -c id` confirms root, whether `frida-server` is running, and whether an installed package name contains `singularity`. A failed check is not proof that a method is unsupported.
+- **Firmware / Exploit Status Database:** keeps a local, editable database at `%LOCALAPPDATA%\TheRootLibrary\quest_firmware_db.json`. Records can be marked supported, reported, patched, unsupported, or unknown, with notes/source links. It starts empty intentionally: no firmware is marked supported without evidence.
+- **Quest Diagnostics:** exports device properties, ADB version, root/Frida checks, and filtered recent logcat lines to a timestamped report.
+- **IL2CPP / App Inspector:** searches installed package IDs and exports the selected package's APK paths and package metadata. It is a metadata helper, not an automatic memory dumper.
+- **Frida Toolkit:** checks the local Frida client/server and whether the server process is visible on the headset. Existing menu options still handle downloading and attempting to start the server.
+- **Wireless ADB:** connects to an already-enabled ADB-over-TCP endpoint. It does not change the headset's wireless debugging settings.
+- **PCVR Quick Check:** looks for common SteamVR, Meta Quest Link, Virtual Desktop, ALVR, and Discord processes on Windows.
+- **Root Persistence & Safety Guide:** explains temporary-root reboot behavior and cautions around firmware mismatches and partition writes.
+
+All firmware records and diagnostic reports are local to the PC. Review reports before sharing them because logs may contain device identifiers, package names, or other private information. The compatibility database is a notes/evidence tracker, not an exploit verifier. This toolkit does not automatically exploit the headset, unlock a bootloader, flash firmware, or write to boot/system partitions.
+
+## Local data locations
+
+- Firmware database: `%LOCALAPPDATA%\TheRootLibrary\quest_firmware_db.json`
+- Diagnostic reports: `%LOCALAPPDATA%\TheRootLibrary\reports`
+- Filtered logs: `%LOCALAPPDATA%\TheRootLibrary\logs`
