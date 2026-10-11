@@ -550,6 +550,28 @@ APP_INSTALLERS = {
         "url": "https://github.com/amwatson/CitraVR/releases/download/v0.6.0/CitraVR-v0.6.0.apk",
         "allowed_prefix": "https://github.com/amwatson/CitraVR/releases/download/",
     },
+    "4": {
+        "name": "Shizuku",
+        "version": "Latest GitHub release",
+        "filename": "Shizuku-latest.apk",
+        "api_url": "https://api.github.com/repos/RikkaApps/Shizuku/releases/latest",
+        "allowed_prefix": "https://github.com/RikkaApps/Shizuku/releases/",
+    },
+    "5": {
+        "name": "Termux",
+        "version": "Latest GitHub release (universal APK)",
+        "filename": "Termux-latest.apk",
+        "api_url": "https://api.github.com/repos/termux/termux-app/releases/latest",
+        "allowed_prefix": "https://github.com/termux/termux-app/releases/",
+        "asset_contains": "universal",
+    },
+    "6": {
+        "name": "VLC for Android (ARM64)",
+        "version": "Latest official VideoLAN build",
+        "filename": "VLC-Android-latest-arm64.apk",
+        "index_url": "https://get.videolan.org/vlc-android/last/",
+        "allowed_prefix": "https://get.videolan.org/vlc-android/",
+    },
 }
 
 
