@@ -969,6 +969,7 @@ def main_menu() -> None:
         menu.add_row("9", "Quest Toolkit (root, firmware, Frida, logs, PCVR)")
         menu.add_row("Q", "Quit")
         console.print(menu)
+        console.print("\n[dim]made by @skylerVR[/dim]", justify="center")
 
         choice = console.input("\n[bold cyan]Select an option › [/bold cyan]").strip().lower()
         if choice == "1":
