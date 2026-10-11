@@ -119,6 +119,10 @@ The Quest Toolkit adds these helpers:
 
 All firmware records and diagnostic reports are local to the PC. Review reports before sharing them because logs may contain device identifiers, package names, or other private information. The compatibility database is a notes/evidence tracker, not an exploit verifier. This toolkit does not automatically exploit the headset, unlock a bootloader, flash firmware, or write to boot/system partitions.
 
+## Interface
+
+The Quest Toolkit uses a refreshed Rich interface with a connection-status panel, clearer tool descriptions, and a rounded table layout. The connection panel is informational; each tool still asks you to select a device where needed.
+
 ## Local data locations
 
 - Firmware database: `%LOCALAPPDATA%\TheRootLibrary\quest_firmware_db.json`
