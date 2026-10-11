@@ -107,6 +107,9 @@ The Quest Toolkit adds these helpers:
 - **Wireless ADB:** connects to an already-enabled ADB-over-TCP endpoint. It does not change the headset's wireless debugging settings.
 - **PCVR Quick Check:** looks for common SteamVR, Meta Quest Link, Virtual Desktop, ALVR, and Discord processes on Windows.
 - **Root Persistence & Safety Guide:** explains temporary-root reboot behavior and cautions around firmware mismatches and partition writes.
+- **Live Quest Dashboard (menu option 9 → 10):** summarizes model/build, battery level and status, storage usage, memory availability, and uptime using read-only ADB queries.
+- **Quest Screenshot (menu option 9 → 11):** captures the headset display as a PNG on the PC and warns users to check for private notifications before sharing.
+- **App Inventory Export (menu option 9 → 12):** exports third-party package IDs to timestamped TXT and JSON files for modding research.
 
 All firmware records and diagnostic reports are local to the PC. Review reports before sharing them because logs may contain device identifiers, package names, or other private information. The compatibility database is a notes/evidence tracker, not an exploit verifier. This toolkit does not automatically exploit the headset, unlock a bootloader, flash firmware, or write to boot/system partitions.
 
