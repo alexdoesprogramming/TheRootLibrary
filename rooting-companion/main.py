@@ -369,7 +369,7 @@ def start_frida_server() -> None:
         if chmod_result.returncode != 0:
             raise RuntimeError("Could not mark the Frida server binary executable.")
         launch_result = run_adb(
-            adb, "-s", serial, "shell", \"/data/local/tmp/frida-server &\", timeout=20
+            adb, "-s", serial, "shell", "/data/local/tmp/frida-server &", timeout=20
         )
         if launch_result.stdout.strip():
             console.print(launch_result.stdout.strip())
