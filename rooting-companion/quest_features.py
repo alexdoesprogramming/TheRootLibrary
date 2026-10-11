@@ -399,6 +399,124 @@ def pcvr_check(console, pause: Callable[[], None]) -> None:
     pause()
 
 
+
+def quest_live_dashboard(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Show a quick read-only snapshot of the selected Quest."""
+    console.clear()
+    console.print(Panel("Live snapshot of device health and runtime details. Read-only ADB queries.", title="Quest Dashboard", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        props = _properties(adb, serial)
+        battery = _run(adb, serial, "shell", "dumpsys", "battery", timeout=15)
+        storage = _run(adb, serial, "shell", "df", "-h", "/data", timeout=15)
+        memory = _run(adb, serial, "shell", "cat", "/proc/meminfo", timeout=15)
+        uptime = _run(adb, serial, "shell", "cat", "/proc/uptime", timeout=10)
+        table = Table(title=f"Quest status — {serial}", box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Metric")
+        table.add_column("Value", overflow="fold")
+        for key in ("Model", "Device codename", "Build display ID", "Android version", "Security patch"):
+            table.add_row(key, props.get(key, "Not reported"))
+        battery_lines = {}
+        for line in battery.stdout.splitlines():
+            if ":" in line:
+                key, value = line.split(":", 1)
+                battery_lines[key.strip()] = value.strip()
+        table.add_row("Battery level", battery_lines.get("level", "Not reported") + "%")
+        table.add_row("Charging status", battery_lines.get("status", "Not reported"))
+        table.add_row("Temperature", (battery_lines.get("temperature", "Not reported") + " (tenths °C)") if battery_lines.get("temperature") else "Not reported")
+        storage_lines = [line.strip() for line in storage.stdout.splitlines() if line.strip()]
+        table.add_row("Storage (/data)", " | ".join(storage_lines[-1].split()) if len(storage_lines) > 1 else "Not reported")
+        mem = {}
+        for line in memory.stdout.splitlines():
+            match = re.match(r"^(MemTotal|MemAvailable):\\s+(\\d+)\\s+kB", line)
+            if match:
+                mem[match.group(1)] = int(match.group(2))
+        if "MemTotal" in mem:
+            total = mem["MemTotal"] / 1024
+            available = mem.get("MemAvailable", 0) / 1024
+            table.add_row("Memory", f"{available:,.0f} MiB available / {total:,.0f} MiB total")
+        table.add_row("Uptime", uptime.stdout.strip().split()[0] + " seconds" if uptime.stdout.strip() else "Not reported")
+        console.print(table)
+        console.print("[dim]Battery temperature is reported in tenths of a degree Celsius by Android (e.g. 325 = 32.5°C). Values may be unavailable on some firmware.[/dim]")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Dashboard query failed:[/red] {exc}")
+    pause()
+
+
+def capture_quest_screenshot(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Save a screenshot captured from the connected Quest to the PC."""
+    console.clear()
+    console.print(Panel("Capture the headset display and save the PNG on this PC.", title="Quest Screenshot", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        path = _report_path("quest-screenshot", ".png")
+        result = subprocess.run(
+            [str(adb), "-s", serial, "exec-out", "screencap", "-p"],
+            capture_output=True, timeout=30, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode != 0 or not result.stdout.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(detail or "ADB did not return a valid PNG screenshot.")
+        path.write_bytes(result.stdout)
+        console.print(f"[green]Screenshot saved:[/green] {path}")
+        console.print("[dim]Check the image before sharing; it may show personal notifications or account information.[/dim]")
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        console.print(f"[red]Screenshot capture failed:[/red] {exc}")
+    pause()
+
+
+def export_app_inventory(adb: Path, console, pause: Callable[[], None]) -> None:
+    """Export installed package IDs from the selected Quest as TXT and JSON."""
+    console.clear()
+    console.print(Panel("Export the installed package list for app inventory and modding research.", title="App Inventory Export", border_style="cyan"))
+    serial = _choose_device(adb, console)
+    if not serial:
+        pause()
+        return
+    try:
+        result = _run(adb, serial, "shell", "pm", "list", "packages", "-3", timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Package Manager query failed.")
+        packages = sorted(
+            line.strip().removeprefix("package:")
+            for line in result.stdout.splitlines()
+            if line.strip().startswith("package:")
+        )
+        if not packages:
+            console.print("[yellow]No third-party packages were returned; firmware may restrict this query.[/yellow]")
+        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        txt_path = REPORT_DIR / f"quest-app-inventory-{stamp}.txt"
+        json_path = REPORT_DIR / f"quest-app-inventory-{stamp}.json"
+        metadata = {
+            "device_serial": serial,
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "scope": "third-party packages (pm list packages -3)",
+            "count": len(packages),
+            "packages": packages,
+        }
+        txt_path.write_text(
+            f"TheRootLibrary — Quest App Inventory\\nDevice: {serial}\\n"
+            f"Exported: {metadata['exported_at']}\\nPackages: {len(packages)}\\n\\n"
+            + "\\n".join(packages) + "\\n",
+            encoding="utf-8",
+        )
+        json_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+        console.print(f"[green]Exported {len(packages)} package IDs:[/green]")
+        console.print(f"  TXT:  {txt_path}")
+        console.print(f"  JSON: {json_path}")
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        console.print(f"[red]Inventory export failed:[/red] {exc}")
+    pause()
+
 def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Callable[[], None]) -> None:
     while True:
         console.clear()
@@ -415,6 +533,9 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
         menu.add_row("7", "Connect to existing wireless ADB endpoint")
         menu.add_row("8", "PCVR runtime quick check")
         menu.add_row("9", "Root persistence & safety guide")
+        menu.add_row("10", "Live Quest dashboard (battery, storage, memory)")
+        menu.add_row("11", "Capture Quest screenshot to PC")
+        menu.add_row("12", "Export installed third-party app inventory")
         menu.add_row("B", "Back to main menu")
         console.print(menu)
         choice = console.input("Select an option › ").strip().lower()
@@ -422,6 +543,18 @@ def quest_features_menu(adb: Path | None, install_dir: Path, console, pause: Cal
             return
         if choice == "8":
             pcvr_check(console, pause)
+            continue
+        if choice in {"10", "11", "12"}:
+            if adb is None:
+                console.print("[yellow]ADB was not found. Install Platform Tools from the main menu first.[/yellow]")
+                pause()
+                continue
+            if choice == "10":
+                quest_live_dashboard(adb, console, pause)
+            elif choice == "11":
+                capture_quest_screenshot(adb, console, pause)
+            elif choice == "12":
+                export_app_inventory(adb, console, pause)
             continue
         if choice == "9":
             console.clear()
