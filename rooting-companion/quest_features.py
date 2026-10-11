@@ -922,7 +922,7 @@ def permission_audit(adb: Path, console, pause: Callable[[], None]) -> None:
         details = _run(adb, serial, "shell", "dumpsys", "package", package, timeout=30)
         permission_lines = [
             line.rstrip() for line in details.stdout.splitlines()
-            if re.search(r"android\\.permission\\.|permission\\[|granted=|denied=|runtime permissions|install permissions|requested permissions", line, re.I)
+            if re.search(r"android\.permission\.|permission\[|granted=|denied=|runtime permissions|install permissions|requested permissions", line, re.I)
         ]
         if not permission_lines:
             permission_lines = ["No permission fields were exposed in the package dump."]
