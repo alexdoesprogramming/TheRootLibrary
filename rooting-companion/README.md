@@ -8,6 +8,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Installs the tools into `%LOCALAPPDATA%\TheRootLibrary\platform-tools` without requiring administrator access.
 - Detects ADB already on PATH or in the tool's install directory.
 - Lists connected devices and highlights common states such as `device`, `unauthorized`, and `offline`.
+- Browses the ZIP archives currently in the repository, downloads and safely extracts a selected archive, then lets you select and launch a `.bat` file inside it.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
 ## Requirements
@@ -35,6 +36,12 @@ Choose **Install / update official Android Platform Tools** from the menu to ins
 4. Select **Check ADB and connected devices**.
 
 Wireless ADB setup is intentionally not included in this first version.
+
+## Mod ZIP launcher
+
+Choose **Browse, extract & run a mod ZIP** to select one of the repository's mod archives. The app downloads the chosen ZIP, rejects archive paths that escape the extraction folder, extracts it under `%LOCALAPPDATA%\\TheRootLibrary\\mods`, and lists any `.bat` files found. If there are multiple batch files, choose which one to run. You must type `RUN` to confirm execution.
+
+**Important:** a batch file is executable code and can make changes to Windows, your headset, or connected devices. Only run scripts you trust; review the extracted script first if unsure. The app does not automatically request administrator privileges. The repository's ZIP list is currently defined in `main.py`, so new archives must be added to `MOD_ARCHIVES`.
 
 ## Safety
 
