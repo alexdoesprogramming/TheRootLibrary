@@ -278,7 +278,7 @@ def install_frida_server() -> None:
 
 
 def start_frida_server() -> None:
-    """Push the downloaded Frida server to an authorized device and try to start it as root."""
+    """Push the downloaded Frida server to an authorized device and try to start it through ADB shell."""
     clear_screen()
     header()
     adb = find_adb()
@@ -333,7 +333,7 @@ def start_frida_server() -> None:
     console.print(
         Panel(
             "This will push Frida server to /data/local/tmp/frida-server and attempt to launch it "
-            "with su. The headset must already have working root access. "
+            "using the command adb shell \"/data/local/tmp/frida-server &\". "
             "This does not root the device or modify boot/system partitions.",
             title="Start Frida server",
             border_style="yellow",
@@ -346,8 +346,8 @@ def start_frida_server() -> None:
 
     remote_path = "/data/local/tmp/frida-server"
     try:
-        # Reuse a running server if root can see its PID.
-        existing = run_adb(adb, "-s", serial, "shell", "su", "-c", "pidof frida-server")
+        # Reuse a running server if ADB shell can see its PID.
+        existing = run_adb(adb, "-s", serial, "shell", "pidof frida-server")
         if existing.returncode == 0 and existing.stdout.strip():
             console.print(
                 f"[green]Frida server already appears to be running (PID {existing.stdout.strip()}).[/green]"
@@ -364,13 +364,12 @@ def start_frida_server() -> None:
         if push_result.returncode != 0:
             raise RuntimeError("ADB push failed; see the output above.")
 
-        console.print("[cyan]Setting executable permission and attempting root launch…[/cyan]")
-        launch_command = (
-            f"chmod 755 {remote_path} && "
-            f"( {remote_path} >/dev/null 2>&1 & )"
-        )
+        console.print("[cyan]Setting executable permission and starting through ADB shell…[/cyan]")
+        chmod_result = run_adb(adb, "-s", serial, "shell", "chmod", "755", remote_path)
+        if chmod_result.returncode != 0:
+            raise RuntimeError("Could not mark the Frida server binary executable.")
         launch_result = run_adb(
-            adb, "-s", serial, "shell", "su", "-c", launch_command, timeout=20
+            adb, "-s", serial, "shell", \"/data/local/tmp/frida-server &\", timeout=20
         )
         if launch_result.stdout.strip():
             console.print(launch_result.stdout.strip())
@@ -378,18 +377,18 @@ def start_frida_server() -> None:
             console.print(launch_result.stderr.strip())
         if launch_result.returncode != 0:
             raise RuntimeError(
-                "The root launch command failed. Confirm that su works on the headset."
+                "The ADB shell launch command failed. Check the device response and whether the binary can execute."
             )
 
         # Verify startup; allow a moment for the process to initialize.
         import time
         for _ in range(3):
             verify = run_adb(
-                adb, "-s", serial, "shell", "su", "-c", "pidof frida-server", timeout=10
+                adb, "-s", serial, "shell", "pidof frida-server", timeout=10
             )
             if verify.returncode == 0 and verify.stdout.strip():
                 console.print(
-                    f"[green]✓ Frida server appears to be running as root. PID: "
+                    f"[green]✓ Frida server appears to be running. PID: "
                     f"{verify.stdout.strip()}[/green]"
                 )
                 console.print(
@@ -403,7 +402,7 @@ def start_frida_server() -> None:
             raise RuntimeError(
                 "The launch command returned, but Frida server could not be verified as running. "
                 + (f"Device response: {detail}" if detail else
-                   "Check root access, ABI/version compatibility, and whether the binary can execute.")
+                   "Check the temporary-root state, ABI/version compatibility, and whether the binary can execute.")
             )
     except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
         console.print(f"[red]Could not start Frida server:[/red] {exc}")
