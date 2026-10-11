@@ -12,6 +12,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Downloads the official Frida server release for the connected Android device's ABI and places the decompressed binary beside `adb.exe` in the Platform Tools folder.
 - Pushes the downloaded Frida server to an authorized device and attempts to start it as root, then checks whether a server PID is visible.
 - Fetches the latest Singularity APK from the official GitHub Releases API and installs it to a selected authorized ADB device.
+- Downloads and installs Lightning Launcher 10.0.1, the latest CX File Explorer APK from its official download page, or CitraVR v0.6.0 using `adb install -r`.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
 ## Requirements
@@ -46,6 +47,18 @@ Choose **Download latest Singularity APK & install via ADB** to check the offici
 
 This installs or updates the Singularity app only. It does **not** trigger rooting, press **Root Now**, or change device partitions. Make sure the release is appropriate for your headset and firmware before using the app.
 
+
+## Quest app installer
+
+Choose **Install Lightning Launcher / CX File Explorer / CitraVR** to pick one of these APKs:
+
+- **Lightning Launcher 10.0.1** — downloaded from the [official GitHub release](https://github.com/threethan/LightningLauncher/releases/tag/10.0.1).
+- **CX File Explorer** — downloaded through the [official CX File Explorer download page](https://cxfileexplorer.com/?go=download), which redirects to its APK download.
+- **CitraVR v0.6.0** — downloaded from the [official GitHub release](https://github.com/amwatson/CitraVR/releases/tag/v0.6.0).
+
+The installer asks you to select an authorized ADB device and type `INSTALL` before downloading. It checks that the download looks like an APK, installs it with `adb install -r`, and removes the temporary APK afterward. These are app installs only; this option does not root the headset or modify system partitions. Menu option **8** is now About & safety.
+
+
 ## Frida server installer
 
 Choose **Install Frida server into Platform Tools** with an authorized Android device connected. The tool reads the device ABI over ADB, downloads the corresponding official release asset from the Frida GitHub releases, decompresses it, and saves it as `frida-server` beside `adb.exe`. If the `frida` client is available on PATH, it prefers that version so the client and server can match. If no client is found, it uses the latest release and displays a compatibility warning.
@@ -64,7 +77,7 @@ Choose **Browse, extract & run a mod ZIP** to select one of the repository's mod
 
 ## Safety
 
-ADB is a powerful debugging interface. Only authorize computers you trust. This tool only installs Platform Tools and queries ADB status; it does not perform rooting or device modification.
+ADB is a powerful debugging interface. Only authorize computers you trust. The companion can install the listed APKs and run selected user-confirmed scripts, but it does not perform rooting, unlock bootloaders, flash images, or write to system partitions.
 
 ## Project layout
 
