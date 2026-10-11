@@ -19,6 +19,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from quest_features import quest_features_menu
+
 APP_NAME = "TheRootLibrary"
 PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 INSTALL_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME / "platform-tools"
@@ -964,6 +966,7 @@ def main_menu() -> None:
         menu.add_row("6", "Download latest Singularity APK & install via ADB")
         menu.add_row("7", "APK Installer")
         menu.add_row("8", "About & safety")
+        menu.add_row("9", "Quest Toolkit (root, firmware, Frida, logs, PCVR)")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -989,14 +992,16 @@ def main_menu() -> None:
             install_singularity_apk()
         elif choice == "7":
             install_quest_apps()
+        elif choice == "9":
+            quest_features_menu(find_adb(), INSTALL_DIR, console, pause)
         elif choice == "8":
             clear_screen()
             header()
             console.print(
                 Panel(
-                    "This utility currently installs Google's official Android Platform Tools "
-                    "and reports ADB device status. It does not root devices, unlock bootloaders, "
-                    "flash images, or write to system partitions.\n\n"
+                    "This utility provides Quest-specific read-only diagnostics, firmware notes, Frida helpers, "
+                    "and ADB tools. It does not exploit firmware, unlock bootloaders, flash images, "
+                    "or write to boot/system partitions.\n\n"
                     "Only approve USB debugging for computers you trust. Rooting and device "
                     "modification are separate steps and are not performed here.",
                     title="About & safety",
