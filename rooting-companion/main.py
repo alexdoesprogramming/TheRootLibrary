@@ -371,7 +371,7 @@ def install_singularity_apk() -> None:
         if not apk_path.is_file() or apk_path.stat().st_size == 0:
             raise RuntimeError("The downloaded APK is empty.")
         with apk_path.open("rb") as apk_file:
-            if apk_file.read(4) != b"PK\\x03\\x04":
+            if apk_file.read(2) != b"PK":
                 raise RuntimeError("The downloaded asset does not look like a valid APK/ZIP file.")
 
         console.print("[cyan]Installing with ADB (granting requested runtime permissions)…[/cyan]")
