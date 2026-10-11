@@ -526,6 +526,141 @@ def install_singularity_apk() -> None:
     pause()
 
 
+
+
+APP_INSTALLERS = {
+    "1": {
+        "name": "Lightning Launcher",
+        "version": "10.0.1",
+        "filename": "LightningLauncher-10.0.1.apk",
+        "url": "https://github.com/threethan/LightningLauncher/releases/download/10.0.1/LightningLauncher.apk",
+        "allowed_prefix": "https://github.com/threethan/LightningLauncher/releases/download/",
+    },
+    "2": {
+        "name": "CX File Explorer",
+        "version": "Latest official release",
+        "filename": "CX-File-Explorer-latest.apk",
+        "url": "https://cxfileexplorer.com/?go=download",
+        "allowed_prefix": "https://download.cxfileexplorer.com/",
+    },
+    "3": {
+        "name": "CitraVR",
+        "version": "v0.6.0",
+        "filename": "CitraVR-v0.6.0.apk",
+        "url": "https://github.com/amwatson/CitraVR/releases/download/v0.6.0/CitraVR-v0.6.0.apk",
+        "allowed_prefix": "https://github.com/amwatson/CitraVR/releases/download/",
+    },
+}
+
+
+def install_quest_apps() -> None:
+    """Download one of the listed official APKs and install it to an authorized ADB device."""
+    clear_screen()
+    header()
+    table = Table(title="Quest app installer", box=box.ROUNDED, header_style="bold cyan")
+    table.add_column("#", style="bold cyan", width=4)
+    table.add_column("App")
+    table.add_column("Version")
+    for key, app in APP_INSTALLERS.items():
+        table.add_row(key, app["name"], app["version"])
+    console.print(table)
+    console.print("[dim]B = back to menu[/dim]")
+    choice = console.input("\n[bold cyan]Select an app to install › [/bold cyan]").strip().lower()
+    if choice in {"b", "back", "q", "quit"}:
+        return
+    if choice not in APP_INSTALLERS:
+        console.print("[yellow]Invalid selection.[/yellow]")
+        pause()
+        return
+
+    app = APP_INSTALLERS[choice]
+    adb = find_adb()
+    if not adb:
+        console.print("[yellow]ADB is not installed. Install Platform Tools first.[/yellow]")
+        pause()
+        return
+
+    try:
+        devices_result = run_adb(adb, "devices")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]Could not query ADB devices:[/red] {exc}")
+        pause()
+        return
+
+    devices = []
+    for line in devices_result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            devices.append(parts[0])
+
+    if not devices:
+        console.print("[yellow]No authorized ADB device detected.[/yellow]")
+        console.print("[dim]Connect the Quest over USB, accept the USB debugging prompt, and retry.[/dim]")
+        pause()
+        return
+
+    if len(devices) == 1:
+        serial = devices[0]
+    else:
+        console.print("[bold]Choose the target device:[/bold]")
+        for index, device_serial in enumerate(devices, start=1):
+            console.print(f"  [cyan]{index}.[/cyan] {device_serial}")
+        device_choice = console.input("Device number (or B to cancel) › ").strip().lower()
+        if device_choice in {"b", "back", "q"}:
+            return
+        if not device_choice.isdigit() or not 1 <= int(device_choice) <= len(devices):
+            console.print("[yellow]Invalid selection.[/yellow]")
+            pause()
+            return
+        serial = devices[int(device_choice) - 1]
+
+    apk_path = INSTALL_DIR / app["filename"]
+    console.print(f"[cyan]App:[/cyan] {app['name']} ({app['version']})")
+    console.print(f"[cyan]Target device:[/cyan] {serial}")
+    console.print("[dim]This downloads the APK from the app's linked official release/download page.[/dim]")
+    if console.input("Download and install this APK? Type INSTALL to confirm › ").strip() != "INSTALL":
+        console.print("[dim]Cancelled. No APK was installed.[/dim]")
+        pause()
+        return
+
+    try:
+        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(
+            app["url"], headers={"User-Agent": "TheRootLibrary/0.5"}
+        )
+        console.print("[cyan]Downloading APK…[/cyan]")
+        with urllib.request.urlopen(request, timeout=90) as response:
+            final_url = response.geturl()
+            if not final_url.startswith(app["allowed_prefix"]):
+                raise RuntimeError(f"Download redirected to an unexpected location: {final_url}")
+            with apk_path.open("wb") as output:
+                shutil.copyfileobj(response, output)
+
+        if not apk_path.is_file() or apk_path.stat().st_size < 4:
+            raise RuntimeError("The downloaded APK is empty or incomplete.")
+        with apk_path.open("rb") as apk_file:
+            if apk_file.read(2) != b"PK":
+                raise RuntimeError("The downloaded file does not look like a valid APK/ZIP.")
+
+        console.print("[cyan]Installing with adb install -r…[/cyan]")
+        install_result = run_adb(
+            adb, "-s", serial, "install", "-r", str(apk_path), timeout=180
+        )
+        if install_result.stdout.strip():
+            console.print(install_result.stdout.strip())
+        if install_result.stderr.strip():
+            console.print(install_result.stderr.strip())
+        if install_result.returncode != 0 or "Success" not in install_result.stdout:
+            raise RuntimeError("ADB installation failed. Check the output above and the headset screen.")
+
+        console.print(f"[green]✓ {app['name']} installed on {serial}.[/green]")
+    except (OSError, urllib.error.URLError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        console.print(f"[red]{app['name']} installation failed:[/red] {exc}")
+    finally:
+        apk_path.unlink(missing_ok=True)
+    pause()
+
+
 def show_adb_status() -> None:
     clear_screen()
     header()
@@ -749,7 +884,8 @@ def main_menu() -> None:
         menu.add_row("4", "Install Frida server into Platform Tools")
         menu.add_row("5", "Push & try to start Frida server on device")
         menu.add_row("6", "Download latest Singularity APK & install via ADB")
-        menu.add_row("7", "About & safety")
+        menu.add_row("7", "Install Lightning Launcher / CX File Explorer / CitraVR")
+        menu.add_row("8", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -774,6 +910,8 @@ def main_menu() -> None:
         elif choice == "6":
             install_singularity_apk()
         elif choice == "7":
+            install_quest_apps()
+        elif choice == "8":
             clear_screen()
             header()
             console.print(
