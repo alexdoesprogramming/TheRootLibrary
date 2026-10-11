@@ -111,6 +111,12 @@ The Quest Toolkit adds these helpers:
 - **Quest Screenshot (menu option 9 → 11):** captures the headset display as a PNG on the PC and warns users to check for private notifications before sharing.
 - **App Inventory Export (menu option 9 → 12):** exports third-party package IDs to timestamped TXT and JSON files for modding research.
 
+- **Device Profiles (menu option 9 → 13):** saves a local snapshot of headset properties keyed by ADB serial, with optional notes and last-updated time.
+- **Live Logcat Viewer (menu option 9 → 14):** refreshable logcat snapshots with a custom regex or common Unity/IL2CPP/Frida/crash filter; matching lines can be saved to a report.
+- **APK Inspector Plus (menu option 9 → 15):** displays package version/install metadata where exposed, APK paths, and selected signing-related fields from Android's package metadata. It does not claim to cryptographically verify APK files.
+- **One-Click Health Check (menu option 9 → 16):** combines PC/ADB checks, headset properties, root/Frida visibility, battery/storage, filtered logs, and common PCVR process checks into one report.
+- **Per-Game Mod Workspace (menu option 9 → 17):** keeps package IDs, notes, script/folder paths, and log/report references in local JSON plus a Markdown note per game.
+
 All firmware records and diagnostic reports are local to the PC. Review reports before sharing them because logs may contain device identifiers, package names, or other private information. The compatibility database is a notes/evidence tracker, not an exploit verifier. This toolkit does not automatically exploit the headset, unlock a bootloader, flash firmware, or write to boot/system partitions.
 
 ## Local data locations
@@ -118,3 +124,5 @@ All firmware records and diagnostic reports are local to the PC. Review reports 
 - Firmware database: `%LOCALAPPDATA%\TheRootLibrary\quest_firmware_db.json`
 - Diagnostic reports: `%LOCALAPPDATA%\TheRootLibrary\reports`
 - Filtered logs: `%LOCALAPPDATA%\TheRootLibrary\logs`
+- Device profiles: `%LOCALAPPDATA%\TheRootLibrary\device_profiles.json`
+- Per-game mod workspace: `%LOCALAPPDATA%\TheRootLibrary\mod_workspace`
