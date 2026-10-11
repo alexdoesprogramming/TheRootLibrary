@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import urllib.parse
+import urllib.error
 import zipfile
 from pathlib import Path
 
@@ -17,6 +19,20 @@ from rich.table import Table
 APP_NAME = "TheRootLibrary"
 PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 INSTALL_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME / "platform-tools"
+MOD_INSTALL_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME / "mods"
+MODS_BASE_URL = "https://raw.githubusercontent.com/alexdoesprogramming/TheRootLibrary/main/"
+MOD_ARCHIVES = [
+    "Big Scary Root (1).zip",
+    "Bwah (2).zip",
+    "Creepy Baboon.zip",
+    "Fearing Gorilla (1).zip",
+    "GTAG (1).zip",
+    "Lethal Ape Redu.zip",
+    "Lethal Ape Redux (1).zip",
+    "Sandbox.zip",
+    "Scary Baboon (1).zip",
+    "Teddys Pizza.zip",
+]
 console = Console()
 
 
@@ -172,6 +188,131 @@ def show_adb_status() -> None:
     pause()
 
 
+
+def safe_extract_zip(archive: Path, destination: Path) -> None:
+    """Extract a ZIP while rejecting paths that escape the destination."""
+    destination.mkdir(parents=True, exist_ok=True)
+    root = destination.resolve()
+    with zipfile.ZipFile(archive) as bundle:
+        for member in bundle.infolist():
+            target = (destination / member.filename).resolve()
+            if target != root and root not in target.parents:
+                raise RuntimeError(f"Unsafe path in ZIP archive: {member.filename}")
+        bundle.extractall(destination)
+
+
+def download_mod_archive(filename: str) -> Path:
+    MOD_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    archive_path = MOD_INSTALL_DIR / filename
+    url = MODS_BASE_URL + urllib.parse.quote(filename)
+    request = urllib.request.Request(url, headers={"User-Agent": "TheRootLibrary/0.2"})
+    console.print(f"[cyan]Downloading {filename} from TheRootLibrary…[/cyan]")
+    with urllib.request.urlopen(request, timeout=60) as response, archive_path.open("wb") as output:
+        shutil.copyfileobj(response, output)
+    if not zipfile.is_zipfile(archive_path):
+        archive_path.unlink(missing_ok=True)
+        raise RuntimeError("The downloaded file is not a valid ZIP archive.")
+    return archive_path
+
+
+def choose_and_run_mod() -> None:
+    clear_screen()
+    header()
+    console.print(
+        Panel(
+            "[yellow]Mod ZIPs can contain scripts that modify your headset or PC.[/yellow]\n"
+            "Only run a mod you trust. The selected ZIP will be extracted locally, "
+            "then you will choose a BAT file to run. This tool will not automatically elevate privileges.",
+            title="Mod launcher safety",
+            border_style="yellow",
+        )
+    )
+    table = Table(title="Mods in TheRootLibrary", box=box.ROUNDED, header_style="bold cyan")
+    table.add_column("#", style="bold cyan", width=4)
+    table.add_column("Mod archive")
+    for index, filename in enumerate(MOD_ARCHIVES, start=1):
+        table.add_row(str(index), filename)
+    console.print(table)
+    console.print("[dim]B = back to menu[/dim]")
+    choice = console.input("\n[bold cyan]Select a mod › [/bold cyan]").strip().lower()
+    if choice in {"b", "back", "q", "quit"}:
+        return
+    if not choice.isdigit() or not 1 <= int(choice) <= len(MOD_ARCHIVES):
+        console.print("[yellow]Invalid selection.[/yellow]")
+        pause()
+        return
+
+    filename = MOD_ARCHIVES[int(choice) - 1]
+    try:
+        archive = download_mod_archive(filename)
+        extract_dir = MOD_INSTALL_DIR / Path(filename).stem
+        if extract_dir.exists():
+            console.print(f"[yellow]Existing extraction found:[/yellow] {extract_dir}")
+            overwrite = console.input("Delete and re-extract this folder? [y/N] ").strip().lower()
+            if overwrite != "y":
+                console.print("[dim]Cancelled; existing files were left untouched.[/dim]")
+                pause()
+                return
+            shutil.rmtree(extract_dir)
+        safe_extract_zip(archive, extract_dir)
+    except (OSError, urllib.error.URLError, zipfile.BadZipFile, RuntimeError) as exc:
+        console.print(f"[red]Could not prepare mod:[/red] {exc}")
+        pause()
+        return
+
+    batch_files = sorted(
+        (path for path in extract_dir.rglob("*") if path.is_file() and path.suffix.lower() == ".bat"),
+        key=lambda path: str(path).lower(),
+    )
+    if not batch_files:
+        console.print("[yellow]No .bat file was found in this archive.[/yellow]")
+        console.print(f"[dim]Extracted files are in: {extract_dir}[/dim]")
+        pause()
+        return
+
+    console.print(f"\n[green]Extracted to:[/green] {extract_dir}")
+    console.print("[bold]Batch files found:[/bold]")
+    for index, batch_file in enumerate(batch_files, start=1):
+        console.print(f"  [cyan]{index}.[/cyan] {batch_file.relative_to(extract_dir)}")
+    selected = "1"
+    if len(batch_files) > 1:
+        selected = console.input("\nSelect the BAT to run (or B to cancel) › ").strip().lower()
+        if selected in {"b", "back", "q", "quit"}:
+            return
+        if not selected.isdigit() or not 1 <= int(selected) <= len(batch_files):
+            console.print("[yellow]Invalid selection.[/yellow]")
+            pause()
+            return
+
+    batch_file = batch_files[int(selected) - 1]
+    console.print(
+        Panel(
+            f"[bold]{batch_file.relative_to(extract_dir)}[/bold]\n\n"
+            "This runs the selected Windows batch script. Review the script first if you do not "
+            "know what it does. The script may use ADB or make changes outside this application.",
+            title="Confirm execution",
+            border_style="red",
+        )
+    )
+    confirm = console.input("Run this BAT now? Type RUN to confirm › ").strip()
+    if confirm != "RUN":
+        console.print("[dim]Cancelled. Nothing was executed.[/dim]")
+        pause()
+        return
+
+    try:
+        console.print("[cyan]Launching batch file…[/cyan]")
+        completed = subprocess.run(
+            ["cmd.exe", "/c", str(batch_file)],
+            cwd=str(batch_file.parent),
+            check=False,
+        )
+        console.print(f"\n[dim]Batch process exited with code {completed.returncode}.[/dim]")
+    except OSError as exc:
+        console.print(f"[red]Could not launch batch file:[/red] {exc}")
+    pause()
+
+
 def pause() -> None:
     console.input("\n[dim]Press Enter to return to the menu…[/dim]")
 
@@ -191,7 +332,8 @@ def main_menu() -> None:
         menu.add_column("Action")
         menu.add_row("1", "Install / update official Android Platform Tools")
         menu.add_row("2", "Check ADB and connected devices")
-        menu.add_row("3", "About & safety")
+        menu.add_row("3", "Browse, extract & run a mod ZIP")
+        menu.add_row("4", "About & safety")
         menu.add_row("Q", "Quit")
         console.print(menu)
 
@@ -208,6 +350,8 @@ def main_menu() -> None:
         elif choice == "2":
             show_adb_status()
         elif choice == "3":
+            choose_and_run_mod()
+        elif choice == "4":
             clear_screen()
             header()
             console.print(
