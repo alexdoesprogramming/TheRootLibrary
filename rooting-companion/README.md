@@ -12,7 +12,7 @@ A Windows-first terminal utility for getting started with Android/Meta Quest dev
 - Downloads the official Frida server release for the connected Android device's ABI and places the decompressed binary beside `adb.exe` in the Platform Tools folder.
 - Pushes the downloaded Frida server to an authorized device and attempts to start it as root, then checks whether a server PID is visible.
 - Fetches the latest Singularity APK from the official GitHub Releases API and installs it to a selected authorized ADB device.
-- Downloads and installs Lightning Launcher 10.0.1, the latest CX File Explorer APK from its official download page, or CitraVR v0.6.0 using `adb install -r`.
+- Provides an **APK Installer** for Lightning Launcher, CX File Explorer, CitraVR, Shizuku, Termux, and VLC for Android (ARM64), downloading from their official release/download sources and installing with `adb install -r`.
 - Does **not** root devices, unlock bootloaders, flash images, or write to system partitions.
 
 ## Requirements
@@ -48,15 +48,23 @@ Choose **Download latest Singularity APK & install via ADB** to check the offici
 This installs or updates the Singularity app only. It does **not** trigger rooting, press **Root Now**, or change device partitions. Make sure the release is appropriate for your headset and firmware before using the app.
 
 
-## Quest app installer
+## APK Installer
 
-Choose **Install Lightning Launcher / CX File Explorer / CitraVR** to pick one of these APKs:
+Choose **APK Installer** from menu option **7** to install one of these apps to a selected authorized ADB device:
 
-- **Lightning Launcher 10.0.1** — downloaded from the [official GitHub release](https://github.com/threethan/LightningLauncher/releases/tag/10.0.1).
-- **CX File Explorer** — downloaded through the [official CX File Explorer download page](https://cxfileexplorer.com/?go=download), which redirects to its APK download.
-- **CitraVR v0.6.0** — downloaded from the [official GitHub release](https://github.com/amwatson/CitraVR/releases/tag/v0.6.0).
+- **Lightning Launcher 10.0.1** — [official GitHub release](https://github.com/threethan/LightningLauncher/releases/tag/10.0.1).
+- **CX File Explorer** — official [CX File Explorer download page](https://cxfileexplorer.com/?go=download).
+- **CitraVR v0.6.0** — [official GitHub release](https://github.com/amwatson/CitraVR/releases/tag/v0.6.0).
+- **Shizuku** — latest APK asset discovered from the [official GitHub Releases API](https://github.com/RikkaApps/Shizuku/releases).
+- **Termux** — latest universal APK discovered from the [official GitHub Releases API](https://github.com/termux/termux-app/releases). GitHub builds use a shared test key and are not interchangeable with F-Droid/Google Play builds; see the official project notes before switching sources.
+- **VLC for Android (ARM64)** — latest ARM64 APK discovered from the [official VideoLAN download directory](https://get.videolan.org/vlc-android/last/).
 
-The installer asks you to select an authorized ADB device and type `INSTALL` before downloading. It checks that the download looks like an APK, installs it with `adb install -r`, and removes the temporary APK afterward. These are app installs only; this option does not root the headset or modify system partitions. Menu option **8** is now About & safety.
+The installer asks you to choose an authorized device and type `INSTALL` before downloading. It validates the downloaded file, installs with `adb install -r`, and removes the temporary APK afterward. These are ordinary app installs; this option does not root the headset or modify system partitions.
+
+**Not included as APK installs:** SideQuest is a PC companion; Quest Games Optimizer is a paid product that should be obtained through its official purchase channel; AnExplorer VR is distributed through the Meta Store. Those are not treated as downloadable APKs by this menu. Lightning Browser is not listed as a separate APK because it was not verified as a distinct official project.
+
+Menu option **8** remains About & safety.
+
 
 
 ## Frida server installer
